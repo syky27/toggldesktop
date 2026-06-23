@@ -19,6 +19,7 @@ set(BINARY_SOURCE_FILES
     autocompletelistview.cpp
     autocompletelistmodel.cpp
     autocompleteview.cpp
+    calendarview.cpp
     clickablelabel.cpp
     clipboarddialog.cpp
     colorpicker.cpp

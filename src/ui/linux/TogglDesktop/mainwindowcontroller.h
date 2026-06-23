@@ -24,6 +24,7 @@
 #include "./timeentrylistwidget.h"
 #include "./timeentryeditorwidget.h"
 #include "./idlenotificationwidget.h"
+#include "./calendarview.h"
 
 namespace Ui {
 class MainWindowController;
@@ -118,6 +119,7 @@ class MainWindowController : public QMainWindow {
     PreferencesDialog *preferencesDialog;
     AboutDialog *aboutDialog;
     FeedbackDialog *feedbackDialog;
+    CalendarView *calendarView = nullptr;
 
     QIcon icon;
     QIcon iconDisabled;

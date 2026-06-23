@@ -101,6 +101,11 @@ MainWindowController::MainWindowController(
     connectMenuActions();
     enableMenuActions();
 
+    // Redmine fork: the web "Reports" link is irrelevant, so repurpose that menu
+    // item to open the day calendar view.
+    calendarView = new CalendarView(this);
+    ui->actionReports->setText("Calendar");
+
     connect(trayIcon, SIGNAL(activated(QSystemTrayIcon::ActivationReason)),
             this, SLOT(toggleWindow(QSystemTrayIcon::ActivationReason)));
     connect(networkManagement, &NetworkManagement::onlineStateChanged,
@@ -454,7 +459,12 @@ void MainWindowController::onActionSync() {
 }
 
 void MainWindowController::onActionReports() {
-    TogglApi::instance->openInBrowser();
+    // Repurposed for the Redmine fork: open the day calendar view.
+    if (calendarView) {
+        calendarView->show();
+        calendarView->raise();
+        calendarView->activateWindow();
+    }
 }
 
 void MainWindowController::onActionPreferences() {
