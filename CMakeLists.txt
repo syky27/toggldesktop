@@ -61,7 +61,7 @@ endif()
 
 if(NOT USE_BUNDLED_LIBRARIES)
     # Look for Poco
-    find_package(Poco COMPONENTS Crypto DataSQLite NetSSL)
+    find_package(Poco CONFIG REQUIRED COMPONENTS Crypto DataSQLite NetSSL)
 
     # Look for JSON
     find_package(jsoncpp CONFIG)
