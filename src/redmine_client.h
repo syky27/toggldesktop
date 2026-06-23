@@ -30,6 +30,9 @@ class RedmineClient {
     static const int kCustomFieldStop;   // toggl_stop
     static const int kCustomFieldGUID;   // toggl_guid
 
+    // Default Redmine TimeEntryActivity id used when the user has not chosen one.
+    static const int kDefaultActivityID;
+
     // Build the Toggl-shaped account JSON document. `apiKey` authenticates as
     // the Redmine API key. `since` (unix seconds, 0 = full) bounds how far back
     // time entries are pulled.

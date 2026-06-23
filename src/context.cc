@@ -5939,16 +5939,27 @@ error Context::pushEntries(
             continue;
         }
 
-        Json::Value entryJson = (*it)->SaveToJSON();
+        // Running entries (negative duration) stay local until stopped; Redmine
+        // cannot represent an open timer.
+        if (!(*it)->NeedsDELETE() && (*it)->DurationInSeconds() < 0) {
+            continue;
+        }
+        // Every Redmine time entry must be linked to an issue. Keep issue-less
+        // entries local and retry on a later sync (the UI enforces selection at
+        // creation, so this is a safety net rather than the primary guard).
+        if (!(*it)->NeedsDELETE() && !(*it)->TID()) {
+            (*it)->SetUnsynced();
+            continue;
+        }
+
+        Json::Value entryJson = (*it)->SaveToRedmineJSON();
 
         Json::StyledWriter writer;
         entry_json = writer.write(entryJson);
 
-        // std::cout << entry_json;
-
         HTTPRequest req;
         req.host = urls::API();
-        req.relative_url = (*it)->ModelURL();
+        req.relative_url = (*it)->RedmineModelURL();
         req.payload = entry_json;
         req.basic_auth_username = api_token;
         req.basic_auth_password = "api_token";
@@ -6015,8 +6026,11 @@ error Context::pushEntries(
         if (!reader.parse(resp.body, root)) {
             return error("error parsing time entry POST response");
         }
+        // Redmine wraps the entity: {"time_entry": {...}}.
+        const Json::Value &teRoot =
+            root.isMember("time_entry") ? root["time_entry"] : root;
 
-        auto id = root["id"].asUInt64();
+        auto id = teRoot["id"].asUInt64();
         if (!id) {
             logger.error("Backend is sending invalid data: ignoring update without an ID");
             continue;
@@ -6032,7 +6046,14 @@ error Context::pushEntries(
             return error("Backend has changed the ID of the entry");
         }
 
-        (*it)->LoadFromJSON(root, isUsingSyncServer());
+        // Mark the entry synced WITHOUT re-parsing the Redmine response through
+        // the Toggl-shaped LoadFromJSON (the shapes differ). Clearing
+        // UIModifiedAt makes NeedsPUT() false so it is not pushed again.
+        if (teRoot.isMember("updated_on")) {
+            (*it)->SetUpdatedAtString(teRoot["updated_on"].asString());
+        }
+        (*it)->SetUIModifiedAt(0);
+        (*it)->ClearUnsynced();
     }
 
     if (error_found) {

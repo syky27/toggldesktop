@@ -93,6 +93,11 @@ class TOGGL_INTERNAL_EXPORT TimeEntry : public BaseModel, public TimedEvent {
     virtual bool ResolveError(const error &err) override;
     void LoadFromJSON(const Json::Value &value, bool syncServer);
     Json::Value SaveToJSON(int apiVersion = 8) const override;
+
+    // Redmine write helpers (this fork targets a Redmine REST backend).
+    Json::Value SaveToRedmineJSON() const;
+    std::string RedmineModelURL() const;
+
     Json::Value SyncMetadata() const override;
     Json::Value SyncPayload() const override;
 

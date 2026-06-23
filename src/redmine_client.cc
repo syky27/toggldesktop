@@ -23,6 +23,7 @@ namespace toggl {
 const int RedmineClient::kCustomFieldStart = 6;  // toggl_start
 const int RedmineClient::kCustomFieldStop = 7;   // toggl_stop
 const int RedmineClient::kCustomFieldGUID = 8;   // toggl_guid
+const int RedmineClient::kDefaultActivityID = 9;  // Development
 
 static const Poco::UInt64 kSyntheticWorkspaceID = 1;
 static const int kPageSize = 100;
