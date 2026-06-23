@@ -27,6 +27,7 @@
 #include "model/time_entry.h"
 #include "timeline_uploader.h"
 #include "urls.h"
+#include "redmine_client.h"
 #include "window_change_recorder.h"
 #include "onboarding_service.h"
 
@@ -6046,39 +6047,20 @@ error Context::me(
     std::string *user_data_json,
     const Poco::Int64 since) {
 
-    if (email.empty()) {
-        return "Empty email or API token";
+    // For the Redmine backend the credential is an API key. It arrives as
+    // `password` on login, or as `email` on the periodic pull (which passes the
+    // stored api_token in `email` with password == "api_token").
+    std::string apiKey = password;
+    if (apiKey.empty() || apiKey == "api_token") {
+        apiKey = email;
     }
-
-    if (password.empty()) {
-        return "Empty password";
+    if (apiKey.empty()) {
+        return "Empty API token";
     }
 
     try {
         poco_check_ptr(user_data_json);
-
-        std::stringstream ss;
-        ss << "/api/"
-           << kAPIV8
-           << "/me"
-           << "?app_name=" << TogglClient::Config.AppName
-           << "&with_related_data=true";
-        if (since) {
-            ss << "&since=" << since;
-        }
-
-        HTTPRequest req;
-        req.host = urls::API();
-        req.relative_url = ss.str();
-        req.basic_auth_username = email;
-        req.basic_auth_password = password;
-
-        HTTPResponse resp = TogglClient::GetInstance().Get(req);
-        if (resp.err != noError) {
-            return resp.err;
-        }
-
-        *user_data_json = resp.body;
+        return RedmineClient::FetchAccountJSON(apiKey, since, user_data_json);
     } catch(const Poco::Exception& exc) {
         return exc.displayText();
     } catch(const std::exception& ex) {

@@ -78,6 +78,7 @@ set(LIBRARY_SOURCE_FILES
     toggl_api.cc
     toggl_api_private.cc
     urls.cc
+    redmine_client.cc
     websocket_client.cc
     window_change_recorder.cc
     color_convert.cc
