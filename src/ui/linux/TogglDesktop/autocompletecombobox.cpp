@@ -1,6 +1,7 @@
 #include "autocompletecombobox.h"
 #include "autocompletelistmodel.h"
 #include "autocompletelistview.h"
+#include "toggl.h"
 
 #include <QDebug>
 
@@ -20,6 +21,15 @@ AutocompleteComboBox::AutocompleteComboBox(QWidget *parent)
     disconnect(completer, SIGNAL(highlighted(QString)), lineEdit(), nullptr);
     connect(listView, &AutocompleteListView::visibleChanged, this, &AutocompleteComboBox::onDropdownVisibleChanged);
     connect(lineEdit(), &QLineEdit::textEdited, proxyModel, &AutocompleteProxyModel::setFilterFixedString);
+
+    // Live Redmine issue search runs in parallel with the client-side filter
+    // above: debounce typing, then ask the core to fetch matching issues.
+    searchTimer = new QTimer(this);
+    searchTimer->setSingleShot(true);
+    searchTimer->setInterval(300);
+    connect(searchTimer, &QTimer::timeout, this, &AutocompleteComboBox::onSearchTimerTimeout);
+    connect(lineEdit(), &QLineEdit::textEdited, this, &AutocompleteComboBox::onTextEdited);
+
     connect(listView, &AutocompleteListView::selected, this, &AutocompleteComboBox::onDropdownSelected);
 }
 
@@ -128,6 +138,8 @@ void AutocompleteComboBox::onDropdownVisibleChanged() {
 }
 
 void AutocompleteComboBox::onDropdownSelected(AutocompleteView *item) {
+    if (searchTimer)
+        searchTimer->stop();  // don't fire a stale search after a pick
     if (item) {
         switch (item->Type) {
         case 0:
@@ -153,6 +165,65 @@ void AutocompleteComboBox::onDropdownSelected(AutocompleteView *item) {
 
 void AutocompleteComboBox::cancelSelection() {
     listView->setVisible(false);
+}
+
+void AutocompleteComboBox::setLiveSearchEnabled(bool enabled) {
+    liveSearchEnabled = enabled;
+}
+
+void AutocompleteComboBox::onTextEdited(const QString &text) {
+    if (!liveSearchEnabled || suppressSearch)
+        return;
+
+    const QString trimmed = text.trimmed();
+
+    bool allDigits = !trimmed.isEmpty();
+    for (const QChar &c : trimmed) {
+        if (!c.isDigit()) {
+            allDigits = false;
+            break;
+        }
+    }
+    // Require >=2 chars for a text search, but allow a single-digit issue lookup.
+    if (trimmed.isEmpty() || (trimmed.length() < 2 && !allDigits)) {
+        searchTimer->stop();
+        return;
+    }
+
+    pendingSearchText = trimmed;
+    searchTimer->start();  // restart the debounce window on each keystroke
+}
+
+void AutocompleteComboBox::onSearchTimerTimeout() {
+    if (!pendingSearchText.isEmpty())
+        TogglApi::instance->searchIssues(pendingSearchText);
+}
+
+void AutocompleteComboBox::refreshKeepingEdit(QVector<AutocompleteView *> list) {
+    const QString text = lineEdit()->text();
+    const int cursor = lineEdit()->cursorPosition();
+
+    suppressSearch = true;  // model/text churn below must not re-trigger search
+
+    auto *model = qobject_cast<AutocompleteListModel*>(proxyModel->sourceModel());
+    if (model)
+        model->setList(list);
+
+    // Re-apply the client-side filter so the popup reflects the new rows.
+    proxyModel->setFilterFixedString(text);
+
+    // Restore the user's edit text + caret (setList can disturb the line edit).
+    if (lineEdit()->text() != text)
+        lineEdit()->setText(text);
+    lineEdit()->setCursorPosition(qMin(cursor, lineEdit()->text().length()));
+
+    suppressSearch = false;
+
+    // Show the dropdown whenever the refreshed list has matches. Gating on the
+    // popup's current visibility would miss the key case: typing an issue number
+    // with no cached match hides the popup, and the live result must re-open it.
+    if (proxyModel->rowCount() > 0)
+        completer->complete();
 }
 
 AutocompleteCompleter::AutocompleteCompleter(QWidget *parent)

@@ -10,6 +10,7 @@
 #include <QApplication>
 #include <QStringList>
 #include <QDate>
+#include <QSettings>
 
 #include <iostream>   // NOLINT
 
@@ -270,6 +271,10 @@ TogglApi::TogglApi(
 #endif // TOGGL_DATA_DIR
     toggl_set_cacert_path(ctx, toCStr(cacertPath));
 
+    // The Redmine base URL is restored by the core in toggl_set_db_path (called
+    // just above) from a file persisted beside the DB, so auto-login can reach
+    // the backend after a restart. No Qt-side persistence needed.
+
     toggl_on_show_app(ctx, on_display_app);
     toggl_on_update(ctx, on_display_update);
     toggl_on_error(ctx, on_display_error);
@@ -349,7 +354,13 @@ void TogglApi::login(const QString email, const QString password) {
 }
 
 void TogglApi::setBaseURL(const QString url) {
+    // The core persists this beside the DB (Context::SetBaseURL), so the next
+    // launch restores it for auto-login.
     toggl_set_base_url(ctx, toCStr(url));
+}
+
+void TogglApi::searchIssues(const QString &query) {
+    toggl_search_issues(ctx, toCStr(query));
 }
 
 void TogglApi::signup(const QString email, const QString password,

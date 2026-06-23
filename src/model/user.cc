@@ -654,6 +654,12 @@ void User::loadUserTaskFromJSON(
     model->LoadFromJSON(data);
 }
 
+void User::LoadSearchedTasksFromJSON(const Json::Value &tasks) {
+    for (unsigned int i = 0; i < tasks.size(); i++) {
+        loadUserTaskFromJSON(tasks[i], nullptr);
+    }
+}
+
 error User::LoadUserUpdateFromJSONString(
     const std::string &json) {
 

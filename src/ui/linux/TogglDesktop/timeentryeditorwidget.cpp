@@ -35,6 +35,8 @@ projectModel(new AutocompleteListModel(this, QVector<AutocompleteView*>(), AC_PR
 
     ui->description->setModel(descriptionModel);
     ui->project->setModel(projectModel);
+    // The project box is the issue/task picker in the editor: enable live search.
+    ui->project->setLiveSearchEnabled(true);
 
     ui->description->installEventFilter(this);
     ui->project->installEventFilter(this);
@@ -172,6 +174,10 @@ void TimeEntryEditorWidget::displayProjectAutocomplete(
     projectAutocompleteUpdate = list;
     projectAutocompleteNeedsUpdate = true;
     if (ui->project->hasFocus()) {
+        // The user is typing an issue/project to search for — refresh the
+        // dropdown in place, keeping the edit text + cursor.
+        ui->project->refreshKeepingEdit(list);
+        projectAutocompleteNeedsUpdate = false;
         return;
     }
     ui->project->clear();

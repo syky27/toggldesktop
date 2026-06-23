@@ -129,6 +129,10 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
 
     error SetDBPath(const std::string &path);
 
+    // Set the Redmine backend base URL and persist it next to the DB so the
+    // next launch can restore it for auto-login (see SetDBPath).
+    void SetBaseURL(const std::string &base_url);
+
     void SetUpdatePath(const std::string &path) {
         update_path_ = path;
     }
@@ -525,6 +529,11 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
 
     void LoadMore();
 
+    // Live-search Redmine issues by number or subject (across all issues the
+    // API token can see, not just the assigned set cached at login) and surface
+    // the matches in the issue/task autocomplete.
+    void SearchIssues(const std::string &query);
+
     static void SetLogPath(const std::string &path);
 
     void SetQuit() {
@@ -644,6 +653,7 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     void onTrackSettingsUsage(Poco::Util::TimerTask& task);  // NOLINT
     void onWake(Poco::Util::TimerTask& task);  // NOLINT
     void onLoadMore(Poco::Util::TimerTask& task); // NOLINT
+    void onSearchIssues(Poco::Util::TimerTask& task);  // NOLINT
 
     void onTimeEntryAutocompletes(Poco::Util::TimerTask& task);  // NOLINT
     void onMiniTimerAutocompletes(Poco::Util::TimerTask& task);  // NOLINT
@@ -818,6 +828,15 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     // Schedule tasks using a timer:
     Poco::Mutex timer_m_;
     Poco::Util::Timer timer_;
+
+    // Latest live issue-search query: set on the UI thread by SearchIssues,
+    // read on the worker thread by onSearchIssues (latest-wins for fast typing).
+    Poco::Mutex search_query_m_;
+    std::string search_query_;
+
+    // File (next to the DB) holding the persisted Redmine base URL, so the host
+    // survives restarts / auto-login. Set in SetDBPath.
+    std::string base_url_path_;
 
     class GUI ui_;
 

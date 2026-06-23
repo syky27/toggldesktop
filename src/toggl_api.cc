@@ -391,10 +391,10 @@ void toggl_set_cacert_path(
 }
 
 void toggl_set_base_url(
-    void *,
+    void *context,
     const char_t *url) {
 
-    toggl::urls::SetBaseURL(to_string(url));
+    app(context)->SetBaseURL(to_string(url));
 }
 
 bool_t toggl_set_db_path(
@@ -1623,6 +1623,10 @@ bool_t toggl_get_mini_timer_visible(
 
 void toggl_load_more(void* context) {
     app(context)->LoadMore();
+}
+
+void toggl_search_issues(void* context, const char_t *query) {
+    app(context)->SearchIssues(to_string(query));
 }
 
 void track_window_size(void *context,

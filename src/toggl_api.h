@@ -1295,6 +1295,12 @@ extern "C" {
     TOGGL_EXPORT void toggl_load_more(
         void *context);
 
+    // Live-search Redmine issues by number or subject and refresh the issue/task
+    // autocomplete with the matches.
+    TOGGL_EXPORT void toggl_search_issues(
+        void *context,
+        const char_t *query);
+
     TOGGL_EXPORT void track_window_size(
         void *context,
         const uint64_t width,

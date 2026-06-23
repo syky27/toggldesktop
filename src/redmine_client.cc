@@ -2,6 +2,7 @@
 
 #include "redmine_client.h"
 
+#include <cctype>
 #include <sstream>
 #include <string>
 
@@ -20,10 +21,14 @@
 
 namespace toggl {
 
-const int RedmineClient::kCustomFieldStart = 6;  // toggl_start
-const int RedmineClient::kCustomFieldStop = 7;   // toggl_stop
-const int RedmineClient::kCustomFieldGUID = 8;   // toggl_guid
-const int RedmineClient::kDefaultActivityID = 9;  // Development
+// Fallback time-entry custom-field ids and Development activity id for the
+// configured backend. ResolveSchema() overwrites these at login by matching the
+// backend's enumerations by NAME, so the app self-corrects if these
+// instance-specific ids ever change.
+int RedmineClient::kCustomFieldStart = 12;  // toggl_start
+int RedmineClient::kCustomFieldStop = 14;   // toggl_stop
+int RedmineClient::kCustomFieldGUID = 13;   // toggl_guid
+int RedmineClient::kDefaultActivityID = 6;  // Development
 
 static const Poco::UInt64 kSyntheticWorkspaceID = 1;
 static const int kPageSize = 100;
@@ -33,6 +38,8 @@ static const int kTimeEntryWindowDays = 30;
 // issues); the most-recently-updated ones are cached for offline/quick pick and
 // live search (toggl_search_issues) reaches the rest.
 static const int kMaxCachedIssues = 500;
+// Cap live-search results so a broad subject match can't flood the dropdown.
+static const int kMaxSearchResults = 50;
 
 namespace {
 
@@ -124,7 +131,104 @@ std::time_t synthStart(const std::string &spent_on) {
     return Poco::Timestamp().epochTime();
 }
 
+// Map one Redmine issue JSON object to a Toggl-shaped "task". When forceActive
+// is true (live search) the task is marked active regardless of the issue's
+// real status: the autocomplete builder hides inactive tasks, so without this a
+// searched-for closed (or foreign) issue would be fetched but never shown.
+Json::Value mapIssueToTask(const Json::Value &ri, bool forceActive) {
+    Json::Value t;
+    Poco::UInt64 issueID = ri["id"].asUInt64();
+    t["id"] = Json::UInt64(issueID);
+    std::stringstream name;
+    name << "#" << issueID << ": " << ri["subject"].asString();
+    t["name"] = name.str();
+    t["pid"] = Json::UInt64(ri["project"]["id"].asUInt64());
+    t["wid"] = Json::UInt64(kSyntheticWorkspaceID);
+    bool closed = ri.isMember("status") && ri["status"].isMember("is_closed")
+        && ri["status"]["is_closed"].asBool();
+    t["active"] = forceActive ? true : !closed;
+    return t;
+}
+
+// Case-insensitive ASCII string compare.
+bool iequals(const std::string &a, const std::string &b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+                std::tolower(static_cast<unsigned char>(b[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Match the toggl_start/stop/guid custom fields by name in a JSON array of
+// {id, name, [customized_type]} objects (either /custom_fields.json defs or a
+// time entry's custom_fields), updating the RedmineClient ids and found flags.
+// Skips non-time_entry defs when customized_type is present.
+void matchCustomFields(const Json::Value &fields,
+                       bool *fStart, bool *fStop, bool *fGuid) {
+    for (unsigned int i = 0; i < fields.size(); i++) {
+        const Json::Value &f = fields[i];
+        if (f.isMember("customized_type") &&
+                f["customized_type"].asString() != "time_entry") {
+            continue;
+        }
+        if (!f.isMember("name") || !f.isMember("id")) continue;
+        int id = f["id"].asInt();
+        if (id <= 0) continue;
+        const std::string name = f["name"].asString();
+        if (name == "toggl_start") {
+            RedmineClient::kCustomFieldStart = id; *fStart = true;
+        } else if (name == "toggl_stop") {
+            RedmineClient::kCustomFieldStop = id; *fStop = true;
+        } else if (name == "toggl_guid") {
+            RedmineClient::kCustomFieldGUID = id; *fGuid = true;
+        }
+    }
+}
+
 }  // namespace
+
+void RedmineClient::ResolveSchema(const std::string &apiKey,
+                                  const Json::Value &timeEntries) {
+    // Activity: prefer one named "Development"; else the instance default; else
+    // the first active. Leaves the fallback id untouched on failure.
+    Json::Value acts;
+    if (redmineGet(apiKey, "/enumerations/time_entry_activities.json", &acts)
+            == noError) {
+        const Json::Value &arr = acts["time_entry_activities"];
+        int byName = 0, byDefault = 0, firstActive = 0;
+        for (unsigned int i = 0; i < arr.size(); i++) {
+            const Json::Value &a = arr[i];
+            int id = a["id"].asInt();
+            if (id <= 0) continue;
+            bool active = !a.isMember("active") || a["active"].asBool();
+            if (byName == 0 && iequals(a["name"].asString(), "Development")) {
+                byName = id;
+            }
+            if (byDefault == 0 && a["is_default"].asBool()) byDefault = id;
+            if (firstActive == 0 && active) firstActive = id;
+        }
+        int chosen = byName ? byName : (byDefault ? byDefault : firstActive);
+        if (chosen) kDefaultActivityID = chosen;
+    }
+
+    // Custom-field ids by name. The user's own time entries carry {id,name} and
+    // are readable by anyone; only if a field is still unresolved do we try the
+    // admin-only /custom_fields.json.
+    bool fStart = false, fStop = false, fGuid = false;
+    for (unsigned int i = 0; i < timeEntries.size(); i++) {
+        matchCustomFields(timeEntries[i]["custom_fields"],
+                          &fStart, &fStop, &fGuid);
+    }
+    if (!(fStart && fStop && fGuid)) {
+        Json::Value cfs;
+        if (redmineGet(apiKey, "/custom_fields.json", &cfs) == noError) {
+            matchCustomFields(cfs["custom_fields"], &fStart, &fStop, &fGuid);
+        }
+    }
+}
 
 error RedmineClient::FetchAccountJSON(
     const std::string &apiKey,
@@ -171,6 +275,11 @@ error RedmineClient::FetchAccountJSON(
     if (err != noError) {
         return err;
     }
+
+    // Resolve the instance-specific activity + custom-field ids by name before
+    // they're used below (read-back) and later by the write path. Pass the
+    // entries just fetched so non-admins can learn ids from their own data.
+    ResolveSchema(apiKey, rtimeentries);
 
     // ---- assemble the Toggl-shaped account document ----
     Json::Value data;
@@ -220,20 +329,10 @@ error RedmineClient::FetchAccountJSON(
     }
     data["projects"] = projects;
 
-    // tasks (Redmine issues)
+    // tasks (Redmine issues) — keep the real open/closed state for the cached set
     Json::Value tasks(Json::arrayValue);
     for (unsigned int i = 0; i < rissues.size(); i++) {
-        const Json::Value &ri = rissues[i];
-        Json::Value t;
-        Poco::UInt64 issueID = ri["id"].asUInt64();
-        t["id"] = Json::UInt64(issueID);
-        std::stringstream name;
-        name << "#" << issueID << ": " << ri["subject"].asString();
-        t["name"] = name.str();
-        t["pid"] = Json::UInt64(ri["project"]["id"].asUInt64());
-        t["wid"] = Json::UInt64(kSyntheticWorkspaceID);
-        t["active"] = !ri["status"]["is_closed"].asBool();
-        tasks.append(t);
+        tasks.append(mapIssueToTask(rissues[i], false));
     }
     data["tasks"] = tasks;
 
@@ -296,6 +395,42 @@ error RedmineClient::FetchAccountJSON(
     *out_json = Json::writeString(wb, root);
 
     (void)since;  // full-window fetch for now; incremental can use this later.
+    return noError;
+}
+
+error RedmineClient::SearchIssuesJSON(
+    const std::string &apiKey,
+    const std::string &query,
+    Json::Value *out_tasks) {
+
+    *out_tasks = Json::Value(Json::arrayValue);
+    if (query.empty()) {
+        return noError;
+    }
+
+    // All-digits → look up by issue id; otherwise match the subject substring.
+    bool allDigits =
+        query.find_first_not_of("0123456789") == std::string::npos;
+
+    std::stringstream q;
+    if (allDigits) {
+        q << "issue_id=" << query;
+    } else {
+        // Passed verbatim: https_client URL-encodes the whole relative URL, so
+        // pre-encoding here would double-encode. status_id=* spans all statuses.
+        q << "subject=~" << query;
+    }
+    q << "&status_id=*";
+
+    Json::Value rissues(Json::arrayValue);
+    error err = redmineGetPaged(apiKey, "/issues.json", q.str(),
+                                "issues", &rissues, kMaxSearchResults);
+    if (err != noError) {
+        return err;
+    }
+    for (unsigned int i = 0; i < rissues.size(); i++) {
+        out_tasks->append(mapIssueToTask(rissues[i], /*forceActive=*/true));
+    }
     return noError;
 }
 

@@ -2375,6 +2375,30 @@ error Context::SetDBPath(
         }
         db_ = new Database(path);
         OnboardingService::getInstance()->SetDatabase(db());
+
+        // Restore the Redmine base URL persisted beside this DB so auto-login
+        // (which runs shortly after) can reach the backend. Stored per-DB file
+        // so staging/production stay separate. Don't clobber a URL already set
+        // (e.g. the TOGGL_REDMINE_URL env fallback).
+        base_url_path_ = path + ".redmine_url";
+        if (urls::BaseURL().empty()) {
+            try {
+                Poco::FileInputStream fis(base_url_path_);
+                std::string saved;
+                std::getline(fis, saved);
+                while (!saved.empty() && (saved.back() == '\n' ||
+                        saved.back() == '\r' || saved.back() == ' ')) {
+                    saved.pop_back();
+                }
+                if (!saved.empty()) {
+                    urls::SetBaseURL(saved);
+                    logger.debug("restored Redmine base URL from ",
+                                 base_url_path_);
+                }
+            } catch (const Poco::Exception &) {
+                // No persisted URL yet (first run / before first login) - fine.
+            }
+        }
     } catch(const Poco::Exception& exc) {
         return displayError(exc.displayText());
     } catch(const std::exception& ex) {
@@ -2383,6 +2407,21 @@ error Context::SetDBPath(
         return displayError(ex);
     }
     return noError;
+}
+
+void Context::SetBaseURL(const std::string &base_url) {
+    urls::SetBaseURL(base_url);
+    // Persist beside the DB so the next launch auto-restores it (see SetDBPath).
+    if (base_url_path_.empty()) {
+        return;
+    }
+    try {
+        Poco::FileOutputStream fos(base_url_path_);  // defaults to out|trunc
+        fos << urls::BaseURL();  // normalized form (trailing slashes stripped)
+        fos.close();
+    } catch (const Poco::Exception &e) {
+        logger.warning("could not persist Redmine base URL: ", e.displayText());
+    }
 }
 
 void Context::SetEnvironment(const std::string &value) {
@@ -5338,6 +5377,97 @@ void Context::onLoadMore(Poco::Util::TimerTask&) {
         }
 
         displayError(save(false));
+    }
+    catch (const Poco::Exception& exc) {
+        logger.warning(exc.displayText());
+    }
+    catch (const std::exception& ex) {
+        logger.warning(ex.what());
+    }
+    catch (const std::string & ex) {
+        logger.warning(ex);
+    }
+}
+
+void Context::SearchIssues(const std::string &query) {
+    {
+        Poco::Mutex::ScopedLock lock(user_m_);
+        if (!user_) {
+            return;
+        }
+    }
+    // A numeric query is an issue-id lookup (even a single digit is valid); for
+    // free text require >=2 chars so a stray letter doesn't hit the network.
+    bool allDigits = !query.empty() &&
+        query.find_first_not_of("0123456789") == std::string::npos;
+    if (!allDigits && query.size() < 2) {
+        return;
+    }
+    {
+        Poco::Mutex::ScopedLock lock(search_query_m_);
+        search_query_ = query;
+    }
+    Poco::Util::TimerTask::Ptr task =
+        new Poco::Util::TimerTaskAdapter<Context>(*this,
+                &Context::onSearchIssues);
+    Poco::Mutex::ScopedLock lock(timer_m_);
+    timer_.schedule(task, postpone(0));
+}
+
+void Context::onSearchIssues(Poco::Util::TimerTask&) {  // NOLINT
+    std::string api_token;
+    {
+        Poco::Mutex::ScopedLock lock(user_m_);
+        if (!user_) {
+            return;
+        }
+        api_token = user_->APIToken();
+    }
+    if (api_token.empty()) {
+        return;
+    }
+    std::string query;
+    {
+        Poco::Mutex::ScopedLock lock(search_query_m_);
+        query = search_query_;
+    }
+    if (query.empty()) {
+        return;
+    }
+
+    try {
+        Json::Value tasks(Json::arrayValue);
+        error err = RedmineClient::SearchIssuesJSON(api_token, query, &tasks);
+        if (err != noError) {
+            // Log rather than pop an error banner: this runs on every debounced
+            // keystroke, and the token is already validated from login.
+            logger.warning("issue search failed: ", err);
+            return;
+        }
+        if (tasks.size() == 0) {
+            return;
+        }
+        {
+            Poco::Mutex::ScopedLock lock(user_m_);
+            if (!user_) {
+                return;
+            }
+            user_->LoadSearchedTasksFromJSON(tasks);
+        }
+        // Re-emit the autocomplete lists that surface tasks so the freshly
+        // injected issues appear: the mini-timer dropdown (timer field) and the
+        // project dropdown (time-entry editor).
+        {
+            Poco::Mutex::ScopedLock lock(timer_m_);
+            timer_.schedule(
+                new Poco::Util::TimerTaskAdapter<Context>(
+                    *this, &Context::onMiniTimerAutocompletes),
+                Poco::Timestamp());
+            timer_.schedule(
+                new Poco::Util::TimerTaskAdapter<Context>(
+                    *this, &Context::onProjectAutocompletes),
+                Poco::Timestamp());
+        }
     }
     catch (const Poco::Exception& exc) {
         logger.warning(exc.displayText());

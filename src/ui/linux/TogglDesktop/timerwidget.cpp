@@ -61,6 +61,7 @@ selectedProjectId(0) {
     connect(ui->deleteTask, &QPushButton::clicked, this, &TimerWidget::clearTask);
 
     ui->description->setModel(descriptionModel);
+    ui->description->setLiveSearchEnabled(true);
     ui->taskFrame->setVisible(false);
     ui->projectFrame->setVisible(false);
 
@@ -357,6 +358,10 @@ void TimerWidget::displayMinitimerAutocomplete(
     timeEntryAutocompleteUpdate = list;
     timeEntryAutocompleteNeedsUpdate = true;
     if (ui->description->hasFocus()) {
+        // The user is typing — live-search results arrive here. Refresh the
+        // dropdown in place instead of bailing, keeping the edit text + cursor.
+        ui->description->refreshKeepingEdit(list);
+        timeEntryAutocompleteNeedsUpdate = false;
         return;
     }
     QString currentText = ui->description->currentText();

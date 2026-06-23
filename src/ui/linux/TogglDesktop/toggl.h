@@ -77,6 +77,7 @@ class TogglApi : public QObject {
 
     void login(const QString email, const QString password);
     void setBaseURL(const QString url);
+    void searchIssues(const QString &query);
 
     void signup(const QString email, const QString password,
                 const uint64_t countryID);
