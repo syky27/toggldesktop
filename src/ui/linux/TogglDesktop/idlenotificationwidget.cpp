@@ -10,6 +10,38 @@
 #include <X11/extensions/scrnsaver.h>  // NOLINT
 #endif
 
+#ifdef __APPLE__
+#include <IOKit/IOKitLib.h>
+#include <CoreFoundation/CoreFoundation.h>
+
+// System idle time (seconds since the last HID input) via IOKit HIDIdleTime.
+static int64_t macIdleSeconds() {
+    int64_t idleSeconds = 0;
+    io_iterator_t iter = 0;
+    if (IOServiceGetMatchingServices(kIOMainPortDefault,
+            IOServiceMatching("IOHIDSystem"), &iter) == KERN_SUCCESS) {
+        io_registry_entry_t entry = IOIteratorNext(iter);
+        if (entry) {
+            CFMutableDictionaryRef dict = nullptr;
+            if (IORegistryEntryCreateCFProperties(entry, &dict,
+                    kCFAllocatorDefault, 0) == KERN_SUCCESS && dict) {
+                CFNumberRef obj = (CFNumberRef)CFDictionaryGetValue(
+                    dict, CFSTR("HIDIdleTime"));
+                if (obj) {
+                    int64_t ns = 0;
+                    CFNumberGetValue(obj, kCFNumberSInt64Type, &ns);
+                    idleSeconds = ns / 1000000000;
+                }
+                CFRelease(dict);
+            }
+            IOObjectRelease(entry);
+        }
+        IOObjectRelease(iter);
+    }
+    return idleSeconds;
+}
+#endif  // __APPLE__
+
 IdleNotificationWidget::IdleNotificationWidget(QStackedWidget *parent)
     : QWidget(parent)
     , ui(new Ui::IdleNotificationWidget) {
@@ -44,6 +76,11 @@ void IdleNotificationWidget::displaySettings(const bool open, SettingsView *sett
 }
 
 void IdleNotificationWidget::requestIdleHint() {
+#ifdef __APPLE__
+    // macOS has no freedesktop screensaver/X11; query IOKit directly.
+    storeIdlePeriod(macIdleSeconds());
+    return;
+#endif
     if (dbusApiAvailable) {
         auto pendingCall = screensaver->asyncCall("GetSessionIdleTime");
         auto watcher = new QDBusPendingCallWatcher(pendingCall, this);

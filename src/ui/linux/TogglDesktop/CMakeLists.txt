@@ -69,6 +69,10 @@ if (UNIX AND NOT APPLE)
     set (TOGGLDESKTOP_ADDITIONAL_LIBS
         -lX11 -lXss
     )
+elseif (APPLE)
+    set (TOGGLDESKTOP_ADDITIONAL_LIBS
+        "-framework IOKit" "-framework CoreFoundation"
+    )
 endif()
 
 # Set up compilation targets
