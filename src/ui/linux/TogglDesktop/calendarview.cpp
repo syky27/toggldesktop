@@ -3,11 +3,13 @@
 #include "./calendarview.h"
 
 #include <QColor>
+#include <QCursor>
 #include <QDateTime>
 #include <QFont>
 #include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
 #include <QScrollArea>
@@ -16,12 +18,20 @@
 
 #include "./toggl.h"
 
-static const int kGutter = 56;          // left hour-label column width
+static const int kGutter = 56;              // left hour-label column width
 static const int64_t kSecondsPerDay = 86400;
+static const int64_t kSnapSeconds = 300;    // snap edits to 5-minute steps
+static const int kEdgePx = 6;               // resize-handle thickness
+static const int64_t kMinDuration = 300;    // smallest entry the grid allows
 
-DayGrid::DayGrid(QWidget *parent) : QWidget(parent), dayStart_(0) {
-    // ~26 px per hour so a full day is comfortably scrollable.
-    setMinimumHeight(24 * 26);
+// ----------------------------- DayGrid --------------------------------------
+
+DayGrid::DayGrid(QWidget *parent)
+    : QWidget(parent), dayStart_(0), mode_(None),
+      origStart_(0), origStop_(0), previewStart_(0), previewStop_(0),
+      pressY_(0), moved_(false) {
+    setMinimumHeight(24 * 26);  // ~26 px/hour, scrollable
+    setMouseTracking(true);
     setAttribute(Qt::WA_StyledBackground, true);
     setStyleSheet("background:#ffffff;");
 }
@@ -30,6 +40,46 @@ void DayGrid::setDay(int64_t dayStartEpoch, QVector<TimeEntryView *> entries) {
     dayStart_ = dayStartEpoch;
     entries_ = entries;
     update();
+}
+
+int DayGrid::yForSeconds(int64_t secIntoDay) const {
+    return static_cast<int>((secIntoDay / double(kSecondsPerDay)) * height());
+}
+
+int64_t DayGrid::entryStop(const TimeEntryView *te) const {
+    int64_t dur = te->DurationInSeconds > 0 ? te->DurationInSeconds : 0;
+    return static_cast<int64_t>(te->Started) + dur;
+}
+
+QRect DayGrid::rectFor(int64_t startEpoch, int64_t stopEpoch) const {
+    int64_t s = qBound<int64_t>(0, startEpoch - dayStart_, kSecondsPerDay);
+    int64_t e = qBound<int64_t>(0, stopEpoch - dayStart_, kSecondsPerDay);
+    int top = yForSeconds(s);
+    int h = yForSeconds(e) - top;
+    if (h < 3) h = 3;
+    return QRect(kGutter + 4, top, width() - kGutter - 8, h);
+}
+
+int64_t DayGrid::snap(int64_t epoch) const {
+    int64_t rel = epoch - dayStart_;
+    rel = ((rel + kSnapSeconds / 2) / kSnapSeconds) * kSnapSeconds;
+    return dayStart_ + rel;
+}
+
+DayGrid::DragMode DayGrid::hitTest(const QPoint &pos, TimeEntryView **hit) const {
+    for (int i = entries_.size() - 1; i >= 0; --i) {
+        TimeEntryView *te = entries_[i];
+        if (!te || te->IsHeader || te->Group || te->DurationInSeconds < 0)
+            continue;
+        QRect r = rectFor(te->Started, entryStop(te));
+        if (!r.contains(pos)) continue;
+        if (hit) *hit = te;
+        if (pos.y() - r.top() <= kEdgePx) return ResizeTop;
+        if (r.bottom() - pos.y() <= kEdgePx) return ResizeBottom;
+        return Move;
+    }
+    if (hit) *hit = nullptr;
+    return None;
 }
 
 void DayGrid::paintEvent(QPaintEvent *) {
@@ -51,22 +101,17 @@ void DayGrid::paintEvent(QPaintEvent *) {
         }
     }
 
-    // Time-entry blocks.
     for (TimeEntryView *te : entries_) {
-        if (!te || te->IsHeader || te->Group) continue;
-        int64_t dur = te->DurationInSeconds;
-        if (dur < 0) continue;  // running entry: not shown on the day grid
-
-        int64_t startInto = static_cast<int64_t>(te->Started) - dayStart_;
-        if (startInto < 0) startInto = 0;
-        if (startInto > kSecondsPerDay) continue;
-        int64_t endInto = startInto + dur;
-        if (endInto > kSecondsPerDay) endInto = kSecondsPerDay;
-
-        int y = static_cast<int>((startInto / double(kSecondsPerDay)) * h);
-        int bh = static_cast<int>(((endInto - startInto) / double(kSecondsPerDay)) * h);
-        if (bh < 3) bh = 3;
-        QRect r(kGutter + 4, y, w - kGutter - 8, bh);
+        if (!te || te->IsHeader || te->Group || te->DurationInSeconds < 0)
+            continue;
+        int64_t start = te->Started;
+        int64_t stop = entryStop(te);
+        if (mode_ != None && te->GUID == dragGuid_) {  // show drag preview
+            start = previewStart_;
+            stop = previewStop_;
+        }
+        if (start - dayStart_ > kSecondsPerDay) continue;
+        QRect r = rectFor(start, stop);
 
         QColor color(te->Color.isEmpty() ? QString("#9e9e9e") : te->Color);
         if (!color.isValid()) color = QColor("#9e9e9e");
@@ -77,15 +122,109 @@ void DayGrid::paintEvent(QPaintEvent *) {
         QString label = !te->Description.isEmpty() ? te->Description
                         : (!te->TaskLabel.isEmpty() ? te->TaskLabel
                                                     : te->ProjectLabel);
-        if (bh >= 13 && !label.isEmpty()) {
-            QRect textRect = r.adjusted(4, 1, -4, -1);
+        if (r.height() >= 13 && !label.isEmpty()) {
+            QRect tr = r.adjusted(4, 1, -4, -1);
             p.setPen(QColor("#ffffff"));
             QFontMetrics fm(p.font());
-            p.drawText(textRect, Qt::AlignLeft | Qt::AlignTop,
-                       fm.elidedText(label, Qt::ElideRight, textRect.width()));
+            p.drawText(tr, Qt::AlignLeft | Qt::AlignTop,
+                       fm.elidedText(label, Qt::ElideRight, tr.width()));
         }
     }
 }
+
+void DayGrid::mousePressEvent(QMouseEvent *event) {
+    TimeEntryView *hit = nullptr;
+    DragMode m = hitTest(event->pos(), &hit);
+    if (m == None || !hit) {
+        QWidget::mousePressEvent(event);
+        return;
+    }
+    mode_ = m;
+    dragGuid_ = hit->GUID;
+    origStart_ = hit->Started;
+    origStop_ = entryStop(hit);
+    previewStart_ = origStart_;
+    previewStop_ = origStop_;
+    pressY_ = event->pos().y();
+    moved_ = false;
+}
+
+void DayGrid::mouseMoveEvent(QMouseEvent *event) {
+    if (mode_ == None) {  // hover: cursor feedback
+        DragMode m = hitTest(event->pos(), nullptr);
+        if (m == ResizeTop || m == ResizeBottom)
+            setCursor(Qt::SizeVerCursor);
+        else if (m == Move)
+            setCursor(Qt::OpenHandCursor);
+        else
+            setCursor(Qt::ArrowCursor);
+        return;
+    }
+
+    if (height() <= 0) return;
+    int64_t deltaSec =
+        static_cast<int64_t>(event->pos().y() - pressY_) * kSecondsPerDay / height();
+    const int64_t dayEnd = dayStart_ + kSecondsPerDay;
+
+    if (mode_ == Move) {
+        int64_t dur = origStop_ - origStart_;
+        int64_t ns = qBound<int64_t>(dayStart_, snap(origStart_ + deltaSec),
+                                     dayEnd - dur);
+        previewStart_ = ns;
+        previewStop_ = ns + dur;
+    } else if (mode_ == ResizeTop) {  // top edge moves, bottom (origStop_) fixed
+        previewStart_ = qBound<int64_t>(dayStart_, snap(origStart_ + deltaSec),
+                                        origStop_ - kMinDuration);
+        previewStop_ = origStop_;
+    } else {  // ResizeBottom: bottom edge moves, top (origStart_) fixed
+        previewStop_ = qBound<int64_t>(origStart_ + kMinDuration,
+                                       snap(origStop_ + deltaSec), dayEnd);
+        previewStart_ = origStart_;
+    }
+    if (previewStart_ != origStart_ || previewStop_ != origStop_)
+        moved_ = true;
+    update();
+}
+
+void DayGrid::mouseReleaseEvent(QMouseEvent *event) {
+    Q_UNUSED(event);
+    if (mode_ == None) return;
+
+    DragMode m = mode_;
+    QString guid = dragGuid_;
+    int64_t ps = previewStart_;
+    int64_t pe = previewStop_;
+    bool moved = moved_;
+
+    mode_ = None;
+    dragGuid_.clear();
+    moved_ = false;
+    setCursor(Qt::ArrowCursor);
+
+    if (!moved || guid.isEmpty()) {
+        update();
+        return;
+    }
+
+    // Push the edit to the core (which re-syncs to Redmine; the refreshed list
+    // then repaints the block at its new position).
+    switch (m) {
+        case Move:  // keep duration, shift end
+            TogglApi::instance->setTimeEntryStartTimestamp(guid, ps, false);
+            break;
+        case ResizeTop:  // keep end, change start/duration
+            TogglApi::instance->setTimeEntryStartTimestamp(guid, ps, true);
+            break;
+        case ResizeBottom:  // keep start, change end/duration
+            TogglApi::instance->setTimeEntryEndTimestamp(guid, pe);
+            break;
+        default:
+            break;
+    }
+    update();
+}
+
+// --------------------------- CalendarView -----------------------------------
 
 CalendarView::CalendarView(QWidget *parent)
     : QWidget(parent, Qt::Window), date_(QDate::currentDate()) {

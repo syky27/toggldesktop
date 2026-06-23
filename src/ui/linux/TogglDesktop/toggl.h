@@ -163,6 +163,15 @@ class TogglApi : public QObject {
         const QString guid,
         const QString value);
 
+    // Timestamp-based start/end edits used by the calendar drag/resize.
+    bool setTimeEntryStartTimestamp(
+        const QString guid,
+        const int64_t start,
+        const bool keepEndTimeFixed);
+    bool setTimeEntryEndTimestamp(
+        const QString guid,
+        const int64_t end);
+
     QString addProject(
         const QString time_entry_guid,
         const uint64_t workspace_id,

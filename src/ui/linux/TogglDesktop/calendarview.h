@@ -8,12 +8,17 @@
 #include <QWidget>
 #include <QVector>
 #include <QDate>
+#include <QString>
+#include <QRect>
 
 #include "./timeentryview.h"
 
 class QLabel;
 
-// DayGrid paints a single day as an hour-scaled column of time-entry blocks.
+// DayGrid paints a single day as an hour-scaled column of time-entry blocks and
+// supports drag-to-move and edge-resize to reorganize time. All edits are
+// clamped to the displayed day (an entry never crosses midnight via the grid),
+// snapped to 5-minute steps, and pushed to the core on release.
 class DayGrid : public QWidget {
     Q_OBJECT
 
@@ -24,14 +29,36 @@ class DayGrid : public QWidget {
 
  protected:
     void paintEvent(QPaintEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
 
  private:
+    enum DragMode { None, Move, ResizeTop, ResizeBottom };
+
+    int yForSeconds(int64_t secIntoDay) const;
+    int64_t entryStop(const TimeEntryView *te) const;
+    QRect rectFor(int64_t startEpoch, int64_t stopEpoch) const;
+    int64_t snap(int64_t epoch) const;
+    DragMode hitTest(const QPoint &pos, TimeEntryView **hit) const;
+
     int64_t dayStart_;
     QVector<TimeEntryView *> entries_;
+
+    // Drag state (kept as values/GUID, never as a dangling pointer across
+    // a mid-drag list refresh).
+    DragMode mode_;
+    QString dragGuid_;
+    int64_t origStart_;
+    int64_t origStop_;
+    int64_t previewStart_;
+    int64_t previewStop_;
+    int pressY_;
+    bool moved_;
 };
 
 // CalendarView is a standalone window: a day header (prev/next/today) above a
-// scrollable DayGrid. It mirrors the time-entry list and shows the chosen day.
+// scrollable, editable DayGrid. It mirrors the time-entry list.
 class CalendarView : public QWidget {
     Q_OBJECT
 

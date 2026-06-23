@@ -400,6 +400,20 @@ bool TogglApi::setTimeEntryStop(
                                     toCStr(value));
 }
 
+bool TogglApi::setTimeEntryStartTimestamp(
+    const QString guid,
+    const int64_t start,
+    const bool keepEndTimeFixed) {
+    return toggl_set_time_entry_start_timestamp_with_option(
+        ctx, toCStr(guid), start, keepEndTimeFixed);
+}
+
+bool TogglApi::setTimeEntryEndTimestamp(
+    const QString guid,
+    const int64_t end) {
+    return toggl_set_time_entry_end_timestamp(ctx, toCStr(guid), end);
+}
+
 void TogglApi::googleLogin(const QString accessToken) {
     toggl_google_login_async(ctx, toCStr(accessToken));
 }
