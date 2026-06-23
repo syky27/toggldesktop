@@ -333,6 +333,20 @@ void TimerWidget::start() {
     }
     */
 
+    // Every Redmine time entry must be linked to an issue. Issues are mapped to
+    // Toggl "tasks", so a selected issue sets selectedTaskId; block start until
+    // the user has picked one.
+    if (selectedTaskId == 0) {
+        QMessageBox(QMessageBox::Information,
+                    "Redmine issue required",
+                    "Pick a Redmine issue before starting the timer — every "
+                    "time entry must be linked to an issue.\n\nType an issue "
+                    "number or keywords in the box and choose it from the list.",
+                    QMessageBox::Ok).exec();
+        ui->description->setFocus();
+        return;
+    }
+
     QString description = ui->description->currentText();
     if (description == descriptionPlaceholder) {
         description = "";
