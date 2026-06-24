@@ -833,11 +833,6 @@ TEST(toggl_api, toggl_set_idle_seconds) {
     ASSERT_NE("", testing::testresult::idle_guid);
 }
 
-TEST(toggl_api, toggl_open_in_browser) {
-    testing::App app;
-    toggl_open_in_browser(app.ctx());
-}
-
 TEST(toggl_api, toggl_get_support) {
     testing::App app;
     toggl_get_support(app.ctx(), 0);
@@ -848,11 +843,6 @@ TEST(toggl_api, toggl_get_support) {
 TEST(toggl_api, toggl_login) {
     testing::App app;
     toggl_login(app.ctx(), STR("username"), STR("password"));
-}
-
-TEST(toggl_api, toggl_google_login) {
-    testing::App app;
-    toggl_google_login(app.ctx(), STR("token"));
 }
 
 TEST(toggl_api, toggl_sync) {

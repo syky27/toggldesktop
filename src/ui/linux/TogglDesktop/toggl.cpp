@@ -420,14 +420,6 @@ bool TogglApi::setTimeEntryEndTimestamp(
     return toggl_set_time_entry_end_timestamp(ctx, toCStr(guid), end);
 }
 
-void TogglApi::googleLogin(const QString accessToken) {
-    toggl_google_login_async(ctx, toCStr(accessToken));
-}
-
-void TogglApi::googleSignup(const QString &accessToken, uint64_t countryID) {
-    toggl_google_signup_async(ctx, toCStr(accessToken), countryID);
-}
-
 bool TogglApi::setProxySettings(
     const bool useProxy,
     const QString proxyHost,
@@ -644,10 +636,6 @@ void TogglApi::fullSync() {
 
 void TogglApi::sync() {
     toggl_sync(ctx);
-}
-
-void TogglApi::openInBrowser() {
-    toggl_open_in_browser(ctx);
 }
 
 bool TogglApi::clearCache() {

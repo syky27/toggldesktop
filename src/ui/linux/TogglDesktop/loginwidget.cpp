@@ -6,14 +6,7 @@
 #include "toggl.h"
 
 #include <QKeyEvent>
-#include <QtNetworkAuth>
 #include <QDesktopServices>
-
-#define OAUTH_SCOPE "email profile https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email openid"
-#define OAUTH_AUTHORIZATION_URL "https://accounts.google.com/o/oauth2/v2/auth"
-#define OAUTH_TOKEN_URL "https://accounts.google.com/o/oauth2/token"
-#define OAUTH_CLIENT_ID "426090949585-uj7lka2mtanjgd7j9i6c4ik091rcv6n5.apps.googleusercontent.com"
-#define OAUTH_CLIENT_KEY "6IHWKIfTAMF7cPJsBvoGxYui"
 
 LoginWidget::LoginWidget(QStackedWidget *parent) : QWidget(parent),
 ui(new Ui::LoginWidget) {
@@ -24,7 +17,6 @@ ui(new Ui::LoginWidget) {
     ui->email->setPlaceholderText("Redmine URL (e.g. https://redmine.example.com)");
     ui->password->setPlaceholderText("API key");
     ui->password->setEchoMode(QLineEdit::Normal);
-    ui->googleLogin->hide();
     ui->forgotPassword->hide();
     ui->signup->hide();
     ui->viewchangelabel->hide();
@@ -37,37 +29,6 @@ ui(new Ui::LoginWidget) {
 
     connect(TogglApi::instance, SIGNAL(displayError(QString,bool)),  // NOLINT
             this, SLOT(displayError(QString,bool)));  // NOLINT
-
-    auto handler = new QOAuthHttpServerReplyHandler(this);
-    handler->setCallbackText("Received verification code. You may now close this window.");
-
-    oauth2.setReplyHandler(handler);
-    oauth2.setAuthorizationUrl(QUrl(OAUTH_AUTHORIZATION_URL));
-    oauth2.setAccessTokenUrl(QUrl(OAUTH_TOKEN_URL));
-    oauth2.setClientIdentifier(OAUTH_CLIENT_ID);
-    oauth2.setClientIdentifierSharedKey(OAUTH_CLIENT_KEY);
-    oauth2.setScope(OAUTH_SCOPE);
-
-    connect(&oauth2, &QOAuth2AuthorizationCodeFlow::error, this, &LoginWidget::oauthError);
-    connect(&oauth2, &QOAuth2AuthorizationCodeFlow::granted, this, &LoginWidget::oauthGranted);
-    connect(&oauth2, &QOAuth2AuthorizationCodeFlow::authorizationCallbackReceived, [=](const QVariantMap &data) {
-        // The code gets somehow sometimes HTTP-escaped so fix that
-        temporaryOAuthCode = data.value("code").toString();
-        temporaryOAuthCode.replace("%2F", "/", Qt::CaseInsensitive);
-        temporaryOAuthCode.replace("%3A", ":", Qt::CaseInsensitive);
-        temporaryOAuthCode.replace("+", " ", Qt::CaseInsensitive);
-    });
-    oauth2.setModifyParametersFunction([this](QAbstractOAuth::Stage stage, QVariantMap* parameters) {
-        if (stage == QAbstractOAuth::Stage::RequestingAccessToken) {
-            parameters->insert("code", temporaryOAuthCode);
-        }
-    });
-
-    connect(&oauth2, &QAbstractOAuth::authorizeWithBrowser, [=](QUrl url) {
-        QUrlQuery query(url);
-        url.setQuery(query);
-        QMetaObject::invokeMethod(DesktopServices::instance(), "openUrl", Q_ARG(QUrl, url));
-    });
 
     signupVisible = true;
     countriesLoaded = false;
@@ -93,7 +54,6 @@ void LoginWidget::enableAllControls(const bool enable) {
     ui->password->setEnabled(enable);
     ui->login->setEnabled(enable);
     ui->signup->setEnabled(enable);
-    ui->googleLogin->setEnabled(enable);
     ui->forgotPassword->setEnabled(enable);
     ui->viewchangelabel->setEnabled(enable);
 }
@@ -143,32 +103,6 @@ void LoginWidget::on_login_clicked() {
     // email field holds the Redmine URL; password field holds the API key.
     TogglApi::instance->setBaseURL(ui->email->text());
     TogglApi::instance->login(ui->password->text(), ui->password->text());
-}
-
-void LoginWidget::on_googleLogin_linkActivated(const QString &link) {
-    Q_UNUSED(link)
-    oauth2.grant();
-}
-
-void LoginWidget::on_googleSignup_linkActivated(const QString &link) {
-    Q_UNUSED(link)
-    if (validateFields(true, true)) {
-        oauth2.grant();
-    }
-}
-
-void LoginWidget::oauthError(const QString &error, const QString &description, const QUrl &uri) {
-    Q_UNUSED(uri);
-    TogglApi::instance->displayError("Google error: " + error + " (" + description + ")", true);
-}
-
-void LoginWidget::oauthGranted() {
-    if (signupVisible) {
-        TogglApi::instance->googleSignup(oauth2.token(), selectedCountryId);
-    }
-    else {
-        TogglApi::instance->googleLogin(oauth2.token());
-    }
 }
 
 bool LoginWidget::validateFields(bool signup, bool google) {

@@ -843,14 +843,6 @@ void GUI::DisplayOnboarding(const OnboardingType onboarding_type) {
     }
 }
 
-void GUI::DisplayOnLoginSSO(const std::string &ssoURL) {
-    if (on_display_login_sso) {
-        char_t *ssl_url = copy_string(ssoURL);
-        on_display_login_sso(ssl_url);
-        free(ssl_url);
-    }
-}
-
 void GUI::DisplayTimelineUI(const bool isEnabled) {
     if (on_display_timeline_ui) {
         on_display_timeline_ui(isEnabled);

@@ -88,8 +88,6 @@ Context::Context(const std::string &app_name, const std::string &app_version)
 , update_path_("")
 , overlay_visible_(false)
 , last_message_id_("")
-, need_enable_SSO(false)
-, sso_confirmation_code("")
 , sync_state_(STARTUP){
     if (!Poco::URIStreamOpener::defaultOpener().supportsScheme("http")) {
         Poco::Net::HTTPStreamFactory::registerFactory();
@@ -2344,148 +2342,6 @@ Database *Context::db() const {
     return db_;
 }
 
-error Context::GoogleLogin(const std::string &access_token) {
-    return Login(access_token, kGoogleAccessToken);
-}
-
-error Context::AsyncGoogleLogin(const std::string &access_token) {
-    return AsyncLogin(access_token, kGoogleAccessToken);
-}
-
-error Context::AppleLogin(const std::string &access_token) {
-    return Login(access_token, kAppleAccessToken);
-}
-
-error Context::AsyncAppleLogin(const std::string &access_token) {
-    return AsyncLogin(access_token, kAppleAccessToken);
-}
-
-error Context::GetSSOIdentityProvider(const std::string &email) {
-    if (email.empty()) {
-        return displayError("Empty email or API token");
-    }
-
-    try {
-
-        std::stringstream ss;
-        ss << "/api/"
-            << kAPIV9
-            << "/auth/saml2/login";
-
-        Poco::URI::QueryParameters query;
-        query.push_back(std::make_pair("email", email));
-        query.push_back(std::make_pair("client", kDesktopClient));
-
-        HTTPRequest req;
-        req.host = urls::API();
-        req.relative_url = ss.str();
-        req.query = &query;
-
-        HTTPResponse resp = TogglClient::GetInstance().Get(req);
-
-        // Success
-        if (resp.status_code == 200) {
-            Json::Value root;
-            Json::Reader reader;
-            if (!reader.parse(resp.body, root)) {
-                return displayError("Invalid JSON");
-            }
-
-            if (root.isMember("sso_url")) {
-                std::string ssoURL = root["sso_url"].asString();
-
-                // Ask the client to open SSL URL on the browser
-                UI()->DisplayOnLoginSSO(ssoURL);
-            } else {
-                return "Missing sso_url key";
-            }
-        } else {
-            // Return error message from the backend
-            std::string errorMessage = resp.body;
-            if (errorMessage.find(kSSONotConfigure) != std::string::npos) {
-                errorMessage = kBetterSSONotConfigure;
-            }
-            return displayError(errorMessage);
-        }
-
-
-    } catch(const Poco::Exception& exc) {
-        return exc.displayText();
-    } catch(const std::exception& ex) {
-        return ex.what();
-    } catch(const std::string & ex) {
-        return ex;
-    }
-    return noError;
-}
-
-void Context::SetNeedEnableSSO(const std::string &code) {
-    need_enable_SSO = true;
-    sso_confirmation_code = code;
-}
-
-void Context::ResetEnableSSO() {
-    need_enable_SSO = false;
-    sso_confirmation_code = "";
-}
-
-void Context::LoginSSO(const std::string &api_token) {
-    Login(api_token, "api_token");
-}
-
-error Context::EnableSSO(const std::string &code,
-                         const std::string &api_token) {
-    if (code.empty()) {
-        return displayError("Empty confirmation code");
-    }
-
-    try {
-
-        std::stringstream ss;
-        ss << "/api/"
-            << kAPIV9
-            << "/me/enable_sso";
-
-        HTTPRequest req;
-        req.host = urls::API();
-        req.relative_url = ss.str();
-
-        // Must use api_token which obtain from /me endpoint
-        // https://toggl.slack.com/archives/C010JBG1KTK/p1592579211031900?thread_ts=1592548873.021000&cid=C010JBG1KTK
-        req.basic_auth_username = api_token;
-        req.basic_auth_password = "api_token";
-
-        // Body Json
-        Json::Value body;
-        Json::FastWriter w;
-        body["confirmation_code"] = code;
-        req.payload = w.write(body);
-
-        // Make a request
-        HTTPResponse resp = TogglClient::GetInstance().Post(req);
-
-        // Success
-        if (resp.status_code == 200) {
-            return noError;
-        } else {
-            // Return error message from the backend
-            // 401 status but the body is empty
-            // we should return some error
-            if (resp.body.length() == 0) {
-                return "Unauthorized!";
-            }
-            return resp.body;
-        }
-    } catch(const Poco::Exception& exc) {
-        return exc.displayText();
-    } catch(const std::exception& ex) {
-        return ex.what();
-    } catch(const std::string & ex) {
-        return ex;
-    }
-    return noError;
-}
-
 error Context::attemptOfflineLogin(const std::string &email,
                                    const std::string &password) {
     if (email.empty()) {
@@ -2558,24 +2414,6 @@ error Context::Login(
         error err = me(email, password, &json, 0);
         if (err != noError) {
 
-            // Workaround to Fulfill Apple Review team
-            // If the apple email doesn't exist on Toggl system
-            // Instead of presenting an error, we have to show a different window to select Country and TOS then creating a new account
-            // Same behavior with Mobile app
-            //
-            // Apple considers that Toggl will create account regardless of "Sign In / Sign Up with Apple"
-            // At the moment, Toggl BE doesn't automatically create new Toggl Account with Apple Email by "Sign In with Apple"
-            //
-            // Discussion: https://toggl.slack.com/archives/CSE5U3ZUN/p1586418153111700
-            //
-#if defined(__APPLE__)
-            if ((password.compare(kAppleAccessToken) == 0 || password.compare(kGoogleAccessToken) == 0) // Applied for Google and Apple Sign In
-                    && IsAuthenticationError(err)) {
-                UI()->DisplayOnContinueSignIn();
-                return err;
-            }
-#endif
-
             if (!IsNetworkingError(err)) {
                 return displayError(err);
             }
@@ -2592,25 +2430,6 @@ error Context::Login(
         err = SetLoggedInUserFromJSON(json, isSignup);
         if (err != noError) {
             return displayError(err);
-        }
-
-        // It's for SSO Feature
-        // After user authorization, we have to enable SSO with the user's email before presenting the Main View
-        if (need_enable_SSO) {
-            // At this point, we successfully get /me, so we have the api_token
-            auto api_token = user_->APIToken();
-
-            // Start enable SSO for this token
-            error err = EnableSSO(sso_confirmation_code, api_token);
-
-            // If something wrong, we should logout and display error
-            if (err != noError) {
-                Logout();
-                displayError(err);
-                return err;
-            }
-
-            ResetEnableSSO();
         }
 
         err = pullAllPreferencesData();
@@ -2633,13 +2452,7 @@ error Context::Login(
         }
 
         if ("production" == environment_) {
-            if (password.compare(kGoogleAccessToken) == 0) {
-                analytics_.TrackLoginWithGoogle(db_->AnalyticsClientID());
-            } else if (password.compare(kAppleAccessToken) == 0) {
-                analytics_.TrackLoginWithApple(db_->AnalyticsClientID());
-            } else {
-                analytics_.TrackLoginWithUsernamePassword(db_->AnalyticsClientID());
-            }
+            analytics_.TrackLoginWithUsernamePassword(db_->AnalyticsClientID());
         }
 
         overlay_visible_ = false;
@@ -2675,50 +2488,6 @@ error Context::Signup(
     }
 
     return Login(email, password, true);
-}
-
-error Context::GoogleSignup(
-    const std::string &access_token,
-    const uint64_t country_id) {
-
-    std::string json("");
-    error err = signupGoogle(access_token, &json, country_id);
-    if (err != noError) {
-        return displayError(err);
-    }
-    return Login(access_token, kGoogleAccessToken, true);
-}
-
-error Context::AsyncGoogleSignup(const std::string &access_token,
-                                 const uint64_t country_id) {
-    std::thread backgroundThread([&](std::string access_token, uint64_t country_id) {
-        return this->GoogleSignup(access_token, country_id);
-    }, access_token, country_id);
-    backgroundThread.detach();
-    return noError;
-}
-
-error Context::AppleSignup(
-    const std::string &access_token,
-    const uint64_t country_id,
-    const std::string &full_name) {
-    std::string json("");
-    error err = signupApple(access_token, &json, full_name, country_id);
-    if (err != noError) {
-        return displayError(err);
-    }
-    return Login(access_token, kAppleAccessToken, true);
-}
-
-error Context::AsyncAppleSignup(
-    const std::string &access_token,
-    const uint64_t country_id,
-    const std::string &full_name) {
-    std::thread backgroundThread([&](std::string access_token, uint64_t country_id, std::string full_name) {
-        return this->AppleSignup(access_token, country_id, full_name);
-    }, access_token, country_id, full_name);
-    backgroundThread.detach();
-    return noError;
 }
 
 void Context::setUser(User *value, const bool logged_in) {
@@ -4497,67 +4266,6 @@ void Context::SetSleep() {
             window_change_recorder_->SetIsSleeping(true);
         }
     }
-}
-
-error Context::AsyncOpenReportsInBrowser() {
-    std::thread backgroundThread([&]() {
-        return this->OpenReportsInBrowser();
-    });
-    backgroundThread.detach();
-    return noError;
-}
-
-error Context::OpenReportsInBrowser() {
-    // Do not even allow to open reports
-    // else they will linger around in the app
-    // and the user can continue using the unsupported app.
-    if (urls::ImATeapot()) {
-        return displayError(kUnsupportedAppError);
-    }
-
-    std::string apitoken("");
-
-    {
-        Poco::Mutex::ScopedLock lock(user_m_);
-        if (!user_) {
-            return displayError("You must log in to view reports");
-        }
-        apitoken = user_->APIToken();
-    }
-
-    HTTPRequest req;
-    req.host = urls::API();
-    req.relative_url = "/api/v9/desktop_login_tokens";
-    req.payload = "{}";
-    req.basic_auth_username = apitoken;
-    req.basic_auth_password = "api_token";
-
-    HTTPResponse resp = TogglClient::GetInstance().Post(req);
-    if (resp.err != noError) {
-        return displayError(resp.err);
-    }
-    if (resp.body.empty()) {
-        return displayError("Unexpected empty response from API");
-    }
-
-    std::string login_token("");
-    error err = User::LoginToken(resp.body, &login_token);
-    if (err != noError) {
-        return displayError(err);
-    }
-
-    if (login_token.empty()) {
-        return displayError("Could not extract login token from JSON");
-    }
-
-    // Not implemented in v9 as of 12.05.2017
-    std::stringstream ss;
-    ss  << urls::Main() << "/api/v8/desktop_login"
-        << "?login_token=" << login_token
-        << "&goto=reports";
-    UI()->DisplayURL(ss.str());
-
-    return noError;
 }
 
 error Context::offerBetaChannel(bool *did_offer) {
@@ -6585,83 +6293,6 @@ error Context::syncHandleResponse(Json::Value &array, const std::vector<T*> &sou
                 continue;
             }
         }
-    }
-    return noError;
-}
-
-error Context::signupGoogle(
-    const std::string &access_token,
-    std::string *user_data_json,
-    const uint64_t country_id) {
-    return signUpWithProvider(access_token, user_data_json, country_id, "", kGoogleProvider);
-}
-
-error Context::signupApple(
-    const std::string &access_token,
-    std::string *user_data_json,
-    const std::string &full_name,
-    const uint64_t country_id) {
-    return signUpWithProvider(access_token, user_data_json, country_id, full_name, kAppleProvider);
-}
-
-error Context::signUpWithProvider(
-    const std::string &access_token,
-    std::string *user_data_json,
-    const uint64_t country_id,
-    const std::string &full_name,
-    const std::string &provider) {
-    try {
-        poco_check_ptr(user_data_json);
-
-        Json::Value user;
-        user["token"] = access_token;
-        user["created_with"] = Formatter::EscapeJSONString(
-            HTTPClient::Config.UserAgent());
-        user["tos_accepted"] = true;
-        user["country_id"] = Json::UInt64(country_id);
-        user["provider"] = provider;
-        if (!full_name.empty()) {
-            user["full_name"] = full_name;
-        }
-
-        Json::Value ws;
-        ws["initial_pricing_plan"] = 0;
-        user["workspace"] = ws;
-
-        std::stringstream ss;
-        ss << "/api/v9/signup?app_name=" << TogglClient::Config.AppName;
-
-        HTTPRequest req;
-        req.host = urls::API();
-        req.relative_url = ss.str();
-        req.payload = Json::StyledWriter().write(user);
-
-        HTTPResponse resp = TogglClient::GetInstance().Post(req);
-        if (resp.err != noError) {
-            if (kBadRequestError == resp.err) {
-                return resp.body;
-            }
-            return resp.err;
-        }
-
-        *user_data_json = resp.body;
-
-        if ("production" == environment_) {
-            if (provider == kAppleProvider) {
-                analytics_.TrackSignupWithApple(db_->AnalyticsClientID());
-            } else if (provider == kGoogleProvider) {
-                analytics_.TrackSignupWithGoogle(db_->AnalyticsClientID());
-            }
-        }
-    }
-    catch (const Poco::Exception& exc) {
-        return exc.displayText();
-    }
-    catch (const std::exception& ex) {
-        return ex.what();
-    }
-    catch (const std::string& ex) {
-        return ex;
     }
     return noError;
 }

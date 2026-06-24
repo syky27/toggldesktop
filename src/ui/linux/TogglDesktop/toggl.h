@@ -82,10 +82,6 @@ class TogglApi : public QObject {
     void signup(const QString email, const QString password,
                 const uint64_t countryID);
 
-    void googleLogin(const QString accessToken);
-
-    void googleSignup(const QString &accessToken, uint64_t countryID);
-
     QString start(const QString &description,
         const QString &duration,
         const uint64_t task_id,
@@ -100,8 +96,6 @@ class TogglApi : public QObject {
     bool continueTimeEntry(const QString guid);
 
     bool continueLatestTimeEntry();
-
-    void openInBrowser();
 
     void fullSync();
 

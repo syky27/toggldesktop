@@ -362,9 +362,6 @@ extern "C" {
     typedef void (*TogglContinueSignIn)(
     );
 
-    typedef void (*TogglDisplayLoginSSO)(
-        const char_t *sso_url);
-
     typedef void (*TogglDisplayIdleNotification)(
         const char_t *guid,
         const char_t *since,
@@ -660,44 +657,6 @@ extern "C" {
         const char_t *password,
         const uint64_t country_id);
 
-    TOGGL_EXPORT bool_t toggl_google_signup(
-        void *context,
-        const char_t *access_token,
-        const uint64_t country_id);
-
-    TOGGL_EXPORT bool_t toggl_google_signup_async(
-        void *context,
-        const char_t *access_token,
-        const uint64_t country_id);
-
-    TOGGL_EXPORT bool_t toggl_google_login(
-        void *context,
-        const char_t *access_token);
-
-    TOGGL_EXPORT bool_t toggl_google_login_async(
-        void *context,
-        const char_t *access_token);
-
-    TOGGL_EXPORT bool_t toggl_apple_login(
-        void *context,
-        const char_t *access_token);
-
-    TOGGL_EXPORT bool_t toggl_apple_login_async(
-        void *context,
-        const char_t *access_token);
-
-    TOGGL_EXPORT bool_t toggl_apple_signup(
-        void *context,
-        const char_t *access_token,
-        const uint64_t country_id,
-        const char_t *full_name);
-
-    TOGGL_EXPORT bool_t toggl_apple_signup_async(
-        void *context,
-        const char_t *access_token,
-        const uint64_t country_id,
-        const char_t *full_name);
-
     TOGGL_EXPORT void toggl_password_forgot(
         void *context);
 
@@ -705,9 +664,6 @@ extern "C" {
         void *context);
 
     TOGGL_EXPORT void toggl_privacy_policy(
-        void *context);
-
-    TOGGL_EXPORT void toggl_open_in_browser(
         void *context);
 
     TOGGL_EXPORT bool_t toggl_accept_tos(
@@ -1392,28 +1348,9 @@ extern "C" {
         void *context,
         TogglContinueSignIn cb);
 
-    TOGGL_EXPORT void toggl_on_display_login_sso(
-        void *context,
-        TogglDisplayLoginSSO cb);
-
     TOGGL_EXPORT TogglHsvColor toggl_get_adaptive_hsv_color(
        TogglRgbColor rgbColor,
        TogglAdaptiveColor type);
-
-    TOGGL_EXPORT bool_t toggl_get_identity_provider_sso(
-        void *context,
-        const char_t *email);
-
-    TOGGL_EXPORT void toggl_set_need_enable_SSO(
-        void *context,
-        const char_t *code);
-
-    TOGGL_EXPORT void toggl_reset_enable_SSO(
-        void *context);
-
-    TOGGL_EXPORT void toggl_login_sso(
-        void *context,
-        const char_t *api_token);
     
     TOGGL_EXPORT void toggl_track_timeline_menu_context(
         void *context,

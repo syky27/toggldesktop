@@ -80,7 +80,7 @@ add_executable(TogglDesktop ${BINARY_SOURCE_FILES})
 # And list the dependencies between them (and system libraries)
 target_link_libraries(TogglDesktop PRIVATE
     TogglDesktopLibrary
-    Qt5::Widgets Qt5::DBus Qt5::NetworkAuth
+    Qt5::Widgets Qt5::DBus Qt5::Network
     ${QXT_LIBRARIES}
     Bugsnag
     ${TOGGLDESKTOP_ADDITIONAL_LIBS}

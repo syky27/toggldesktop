@@ -487,70 +487,6 @@ bool_t toggl_signup_async(
             to_string(password), country_id);
 }
 
-bool_t toggl_google_signup(
-    void *context,
-    const char_t *access_token,
-    const uint64_t country_id) {
-    return toggl::noError == app(context)->GoogleSignup(to_string(access_token),
-            country_id);
-}
-
-bool_t toggl_google_signup_async(
-    void *context,
-    const char_t *access_token,
-    const uint64_t country_id) {
-    return toggl::noError == app(context)->AsyncGoogleSignup(to_string(access_token),
-            country_id);
-}
-
-bool_t toggl_apple_signup(
-    void *context,
-    const char_t *access_token,
-    const uint64_t country_id,
-    const char_t *full_name) {
-    std::string name("");
-    if (full_name) {
-        name = to_string(full_name);
-    }
-    return toggl::noError == app(context)->AppleSignup(to_string(access_token), country_id, name);
-}
-
-bool_t toggl_apple_signup_async(
-    void *context,
-    const char_t *access_token,
-    const uint64_t country_id,
-    const char_t *full_name) {
-    std::string name("");
-    if (full_name) {
-        name = to_string(full_name);
-    }
-    return toggl::noError == app(context)->AsyncAppleSignup(to_string(access_token), country_id, name);
-}
-
-bool_t toggl_google_login(
-    void *context,
-    const char_t *access_token) {
-    return toggl::noError == app(context)->GoogleLogin(to_string(access_token));
-}
-
-bool_t toggl_google_login_async(
-    void *context,
-    const char_t *access_token) {
-    return toggl::noError == app(context)->AsyncGoogleLogin(to_string(access_token));
-}
-
-bool_t toggl_apple_login(
-    void *context,
-    const char_t *access_token) {
-    return toggl::noError == app(context)->AppleLogin(to_string(access_token));
-}
-
-bool_t toggl_apple_login_async(
-    void *context,
-    const char_t *access_token) {
-    return toggl::noError == app(context)->AsyncAppleLogin(to_string(access_token));
-}
-
 bool_t toggl_logout(
     void *context) {
 
@@ -1310,10 +1246,6 @@ void toggl_set_online(void *context) {
     app(context)->SetOnline();
 }
 
-void toggl_open_in_browser(void *context) {
-    app(context)->AsyncOpenReportsInBrowser();
-}
-
 bool_t toggl_accept_tos(void *context) {
     return toggl::noError == app(context)->ToSAccept();
 }
@@ -1776,39 +1708,10 @@ void toggl_on_continue_sign_in(
     app(context)->UI()->OnContinueSignIn(cb);
 }
 
-void toggl_on_display_login_sso(void *context,
-                                TogglDisplayLoginSSO cb) {
-    app(context)->UI()->OnDisplayLoginSSO(cb);
-}
-
 TogglHsvColor toggl_get_adaptive_hsv_color(
     TogglRgbColor rgbColor,
     TogglAdaptiveColor type) {
     return toggl::ColorConverter::GetAdaptiveColor(rgbColor, type);
-}
-
-bool_t toggl_get_identity_provider_sso(void *context, const char_t *email) {
-    return toggl::noError == app(context)->GetSSOIdentityProvider(to_string(email));
-}
-
-void toggl_set_need_enable_SSO(void *context, const char_t *code) {
-    std::string _code("");
-    if (code) {
-        _code = to_string(code);
-    }
-    app(context)->SetNeedEnableSSO(_code);
-}
-
-void toggl_reset_enable_SSO(void *context) {
-    app(context)->ResetEnableSSO();
-}
-
-void toggl_login_sso(void *context, const char_t *api_token) {
-    std::string token("");
-    if (api_token) {
-        token = to_string(api_token);
-    }
-    app(context)->LoginSSO(token);
 }
 
 void toggl_track_timeline_menu_context(void *context, TimelineMenuContextType menuType) {

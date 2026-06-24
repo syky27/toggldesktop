@@ -73,9 +73,7 @@ void OverlayWidget::displayLogin(
 
 void OverlayWidget::on_actionButton_clicked()
 {
-    if (current_type == 0) {
-        TogglApi::instance->openInBrowser();
-    } else if (current_type == 1) {
+    if (current_type == 1) {
         TogglApi::instance->tosAccept();
     }
 }

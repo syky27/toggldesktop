@@ -315,7 +315,6 @@ class TOGGL_INTERNAL_EXPORT GUI : public SyncStateMonitor {
     , on_display_countries_(nullptr)
     , on_display_onboarding_(nullptr)
     , on_continue_sign_in(nullptr)
-    , on_display_login_sso(nullptr)
     , on_display_timeline_ui(nullptr)
     , lastSyncState(-1)
     , lastUnsyncedItemsCount(-1)
@@ -575,10 +574,6 @@ class TOGGL_INTERNAL_EXPORT GUI : public SyncStateMonitor {
         on_continue_sign_in = cb;
     }
 
-    void OnDisplayLoginSSO(TogglDisplayLoginSSO cb) {
-        on_display_login_sso = cb;
-    }
-
     void OnDisplayTimelineUI(TogglDisplayTimelineUI cb) {
         on_display_timeline_ui = cb;
     }
@@ -638,8 +633,6 @@ class TOGGL_INTERNAL_EXPORT GUI : public SyncStateMonitor {
         }
     }
 
-    void DisplayOnLoginSSO(const std::string &ssoURL);
-
     void DisplayTimelineUI(const bool isEnabled);
 
  private:
@@ -680,7 +673,6 @@ class TOGGL_INTERNAL_EXPORT GUI : public SyncStateMonitor {
     TogglDisplayCountries on_display_countries_;
     TogglDisplayOnboarding on_display_onboarding_;
     TogglContinueSignIn on_continue_sign_in;
-    TogglDisplayLoginSSO on_display_login_sso;
     TogglDisplayTimelineUI on_display_timeline_ui;
 
     // Cached views

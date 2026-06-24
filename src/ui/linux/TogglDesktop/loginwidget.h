@@ -6,7 +6,6 @@
 #include <QWidget>
 #include <QVector>
 #include <QStackedWidget>
-#include <QOAuth2AuthorizationCodeFlow>
 
 #include <stdint.h>
 
@@ -37,11 +36,6 @@ class LoginWidget : public QWidget {
         const bool open,
         const uint64_t user_id);
 
-    void on_googleLogin_linkActivated(const QString &link);
-    void on_googleSignup_linkActivated(const QString &link);
-
-    void oauthError(const QString &error, const QString &description, const QUrl &uri);
-    void oauthGranted();
     bool validateFields(bool signup, bool google = false);
 
     void on_signup_clicked();
@@ -59,9 +53,6 @@ class LoginWidget : public QWidget {
 
  private:
     Ui::LoginWidget *ui;
-
-    QOAuth2AuthorizationCodeFlow oauth2;
-    QString temporaryOAuthCode;
 
     bool signupVisible;
 

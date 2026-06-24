@@ -321,36 +321,6 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
         const std::string &password,
         const uint64_t country_id);
 
-    error GoogleSignup(
-        const std::string &access_token,
-        const uint64_t country_id);
-
-    error AsyncGoogleSignup(
-        const std::string &access_token,
-        const uint64_t country_id);
-
-    error AppleSignup(
-        const std::string &access_token,
-        const uint64_t country_id,
-        const std::string &full_name);
-
-    error AsyncAppleSignup(
-        const std::string &access_token,
-        const uint64_t country_id,
-        const std::string &full_name);
-
-    error GoogleLogin(const std::string &access_token);
-    error AsyncGoogleLogin(const std::string &access_token);
-
-    error AppleLogin(const std::string &access_token);
-    error AsyncAppleLogin(const std::string &access_token);
-
-    error GetSSOIdentityProvider(const std::string &email);
-    error EnableSSO(const std::string &code, const std::string &api_token);
-    void LoginSSO(const std::string &api_token);
-    void SetNeedEnableSSO(const std::string &code);
-    void ResetEnableSSO();
-
     error Logout();
 
     error SetLoggedInUserFromJSON(
@@ -523,9 +493,6 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     void osShutdown();
 
     void SetOnline();
-
-    error AsyncOpenReportsInBrowser();
-    error OpenReportsInBrowser();
 
     error ToSAccept();
 
@@ -764,21 +731,6 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
         const std::string &password,
         std::string *user_data_json,
         const uint64_t country_id);
-    error signupGoogle(
-        const std::string &access_token,
-        std::string *user_data_json,
-        const uint64_t country_id);
-    error signupApple(
-        const std::string &access_token,
-        std::string *user_data_json,
-        const std::string &full_name,
-        const uint64_t country_id);
-    error signUpWithProvider(
-        const std::string &access_token,
-        std::string *user_data_json,
-        const uint64_t country_id,
-        const std::string &full_name,
-        const std::string &provider);
 
     static error me(const std::string &email,
                     const std::string &password,
@@ -916,9 +868,6 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     bool checkIfSkipPomodoro(TimeEntry *te);
 
     bool isUsingSyncServer() const;
-
-    bool need_enable_SSO;
-    std::string sso_confirmation_code;
 
     enum SyncState {
         STARTUP,

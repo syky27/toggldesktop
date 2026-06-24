@@ -126,10 +126,6 @@
 #define kTogglDesktopClientID_MacOS "toggldesktop.TogglDesktop"
 #define kAPIV8 "v8"
 #define kAPIV9 "v9"
-#define kGoogleProvider "google"
-#define kAppleProvider "apple"
-#define kGoogleAccessToken "google_access_token"
-#define kAppleAccessToken "apple_token"
 
 // there was a typo in the initial set of flags, use both variants
 #define kSyncStrategyLegacy1 "dekstop_sync_client"
