@@ -232,9 +232,6 @@ class TogglApi : public QObject {
     void toggleTimelineRecording(
         const bool recordTimeline);
 
-    bool setUpdateChannel(const QString channel);
-    QString updateChannel();
-
     QString userEmail();
     QString baseURL();
 
@@ -282,9 +279,6 @@ class TogglApi : public QObject {
     void aboutToDisplayOverlay();
     void displayOverlay(
         const int64_t type);
-
-    void displayUpdate(
-        const QString url);
 
     void displayOnlineState(
         int64_t state);
@@ -382,7 +376,6 @@ void on_display_error(
     const char_t *errmsg,
     const bool_t user_error);
 void on_overlay(const int64_t type);
-void on_display_update(const char_t *url);
 void on_display_online_state(
     const bool is_online);
 void on_display_url(const char_t *url);

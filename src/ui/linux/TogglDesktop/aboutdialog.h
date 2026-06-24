@@ -16,17 +16,8 @@ class AboutDialog : public QDialog {
     explicit AboutDialog(QWidget *parent = 0);
     ~AboutDialog();
 
- private slots:  // NOLINT
-    void displayUpdate(const QString url);
-
-    void on_updateButton_clicked();
-
-    void on_releaseChannel_activated(const QString &arg1);
-
  private:
     Ui::AboutDialog *ui;
-
-    QString url;
 };
 
 #endif  // SRC_UI_LINUX_TOGGLDESKTOP_ABOUTDIALOG_H_

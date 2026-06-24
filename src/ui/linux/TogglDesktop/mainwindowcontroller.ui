@@ -73,7 +73,7 @@
    </property>
    <widget class="QMenu" name="menuToggl_Desktop">
     <property name="title">
-     <string>To&amp;ggl Track</string>
+     <string>&amp;Redtick</string>
     </property>
     <addaction name="actionEmail"/>
     <addaction name="separator"/>

@@ -34,10 +34,6 @@ void on_display_app(const bool_t open) {
     TogglApi::instance->displayApp(open);
 }
 
-void on_display_update(const char_t *url) {
-    TogglApi::instance->displayUpdate(toQString(url));
-}
-
 void on_display_error(
     const char_t *errmsg,
     const bool_t user_error) {
@@ -282,7 +278,6 @@ TogglApi::TogglApi(
     // the backend after a restart. No Qt-side persistence needed.
 
     toggl_on_show_app(ctx, on_display_app);
-    toggl_on_update(ctx, on_display_update);
     toggl_on_error(ctx, on_display_error);
     toggl_on_overlay(ctx, on_overlay);
     toggl_on_online_state(ctx, on_display_online_state);
@@ -528,10 +523,6 @@ void TogglApi::toggleTimelineRecording(const bool recordTimeline) {
     toggl_timeline_toggle_recording(ctx, recordTimeline);
 }
 
-bool TogglApi::setUpdateChannel(const QString channel) {
-    return toggl_set_update_channel(ctx, toCStr(channel));
-}
-
 bool TogglApi::setSettingsStopEntryOnShutdown(const bool stop_entry) {
     return toggl_set_settings_stop_entry_on_shutdown_sleep(ctx, stop_entry);
 }
@@ -542,16 +533,6 @@ bool TogglApi::setSettingsIgnoreCert(bool ignore) {
 
 void TogglApi::stopEntryOnShutdown() {
     toggl_os_shutdown(ctx);
-}
-
-QString TogglApi::updateChannel() {
-    char_t *channel = toggl_get_update_channel(ctx);
-    QString res;
-    if (channel) {
-        res = toQString(channel);
-        free(channel);
-    }
-    return res;
 }
 
 QString TogglApi::userEmail() {
