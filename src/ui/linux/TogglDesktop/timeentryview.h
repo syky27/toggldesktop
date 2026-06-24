@@ -33,6 +33,7 @@ class TimeEntryView : public QObject {
     QString Color;
     QString GUID;
     bool Billable;
+    uint64_t ActivityID;
     QString Tags;
     uint64_t Started;
     uint64_t Ended;

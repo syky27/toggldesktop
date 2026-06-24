@@ -44,6 +44,7 @@ void TimeEntry::Fill(toggl::TimeEntry * const model) {
         toggl::Formatter::FormatTimeForTimeEntryEditor(
             model->StopTime());
     Billable = model->Billable();
+    ActivityID = model->ActivityID();
     Tags = model->Tags();
     UpdatedAt = model->UpdatedAt();
     DateHeader =
@@ -690,6 +691,18 @@ void GUI::DisplayWorkspaceSelect(
     view_list_clear(first);
 }
 
+void GUI::DisplayActivities(
+    const std::vector<view::Generic> &list) {
+    logger.debug("DisplayActivities");
+
+    if (!on_display_activities_) {
+        return;
+    }
+    TogglGenericView *first = generic_to_view_item_list(list);
+    on_display_activities_(first);
+    view_list_clear(first);
+}
+
 void GUI::DisplayTimeEntryEditor(const bool open,
                                  const view::TimeEntry &te,
                                  const std::string &focused_field_name) {
@@ -827,14 +840,6 @@ void GUI::DisplayIdleNotification(const std::string &guid,
 void GUI::DisplayOnboarding(const OnboardingType onboarding_type) {
     if (on_display_onboarding_) {
         on_display_onboarding_(onboarding_type);
-    }
-}
-
-void GUI::DisplayOnLoginSSO(const std::string &ssoURL) {
-    if (on_display_login_sso) {
-        char_t *ssl_url = copy_string(ssoURL);
-        on_display_login_sso(ssl_url);
-        free(ssl_url);
     }
 }
 

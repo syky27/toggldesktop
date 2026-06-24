@@ -10,6 +10,7 @@
 #include <QApplication>
 #include <QStringList>
 #include <QDate>
+#include <QSettings>
 
 #include <iostream>   // NOLINT
 
@@ -31,10 +32,6 @@ QString TogglApi::Description = QString("description");
 
 void on_display_app(const bool_t open) {
     TogglApi::instance->displayApp(open);
-}
-
-void on_display_update(const char_t *url) {
-    TogglApi::instance->displayUpdate(toQString(url));
 }
 
 void on_display_error(
@@ -128,6 +125,12 @@ void on_display_project_autocomplete(
 void on_display_workspace_select(
     TogglGenericView *first) {
     TogglApi::instance->displayWorkspaceSelect(
+        GenericView::importAll(first));
+}
+
+void on_display_activities(
+    TogglGenericView *first) {
+    TogglApi::instance->displayActivities(
         GenericView::importAll(first));
 }
 
@@ -270,8 +273,11 @@ TogglApi::TogglApi(
 #endif // TOGGL_DATA_DIR
     toggl_set_cacert_path(ctx, toCStr(cacertPath));
 
+    // The Redmine base URL is restored by the core in toggl_set_db_path (called
+    // just above) from a file persisted beside the DB, so auto-login can reach
+    // the backend after a restart. No Qt-side persistence needed.
+
     toggl_on_show_app(ctx, on_display_app);
-    toggl_on_update(ctx, on_display_update);
     toggl_on_error(ctx, on_display_error);
     toggl_on_overlay(ctx, on_overlay);
     toggl_on_online_state(ctx, on_display_online_state);
@@ -285,6 +291,7 @@ TogglApi::TogglApi(
     toggl_on_mini_timer_autocomplete(ctx, on_display_mini_timer_autocomplete);
     toggl_on_project_autocomplete(ctx, on_display_project_autocomplete);
     toggl_on_workspace_select(ctx, on_display_workspace_select);
+    toggl_on_activities(ctx, on_display_activities);
     toggl_on_client_select(ctx, on_display_client_select);
     toggl_on_tags(ctx, on_display_tags);
     toggl_on_time_entry_editor(ctx, on_display_time_entry_editor);
@@ -324,11 +331,10 @@ bool TogglApi::notifyBugsnag(
     const QString errorClass,
     const QString message,
     const QString context) {
-    QHash<QString, QHash<QString, QString> > metadata;
-    if (instance) {
-        metadata["release"]["channel"] = instance->updateChannel();
-    }
-    return Bugsnag::notify(errorClass, message, context, &metadata);
+    // Redmine fork: never send crash/error telemetry to Bugsnag's cloud
+    // (a Toggl-era third-party service, with Toggl's hardcoded key). Log locally.
+    qWarning() << "[error]" << context << errorClass << message;
+    return false;
 }
 
 bool TogglApi::startEvents() {
@@ -346,6 +352,16 @@ void TogglApi::login(const QString email, const QString password) {
     toggl_login_async(ctx,
                       toCStr(email),
                       toCStr(password));
+}
+
+void TogglApi::setBaseURL(const QString url) {
+    // The core persists this beside the DB (Context::SetBaseURL), so the next
+    // launch restores it for auto-login.
+    toggl_set_base_url(ctx, toCStr(url));
+}
+
+void TogglApi::searchIssues(const QString &query) {
+    toggl_search_issues(ctx, toCStr(query));
 }
 
 void TogglApi::signup(const QString email, const QString password,
@@ -385,12 +401,18 @@ bool TogglApi::setTimeEntryStop(
                                     toCStr(value));
 }
 
-void TogglApi::googleLogin(const QString accessToken) {
-    toggl_google_login_async(ctx, toCStr(accessToken));
+bool TogglApi::setTimeEntryStartTimestamp(
+    const QString guid,
+    const int64_t start,
+    const bool keepEndTimeFixed) {
+    return toggl_set_time_entry_start_timestamp_with_option(
+        ctx, toCStr(guid), start, keepEndTimeFixed);
 }
 
-void TogglApi::googleSignup(const QString &accessToken, uint64_t countryID) {
-    toggl_google_signup_async(ctx, toCStr(accessToken), countryID);
+bool TogglApi::setTimeEntryEndTimestamp(
+    const QString guid,
+    const int64_t end) {
+    return toggl_set_time_entry_end_timestamp(ctx, toCStr(guid), end);
 }
 
 bool TogglApi::setProxySettings(
@@ -501,10 +523,6 @@ void TogglApi::toggleTimelineRecording(const bool recordTimeline) {
     toggl_timeline_toggle_recording(ctx, recordTimeline);
 }
 
-bool TogglApi::setUpdateChannel(const QString channel) {
-    return toggl_set_update_channel(ctx, toCStr(channel));
-}
-
 bool TogglApi::setSettingsStopEntryOnShutdown(const bool stop_entry) {
     return toggl_set_settings_stop_entry_on_shutdown_sleep(ctx, stop_entry);
 }
@@ -517,22 +535,22 @@ void TogglApi::stopEntryOnShutdown() {
     toggl_os_shutdown(ctx);
 }
 
-QString TogglApi::updateChannel() {
-    char_t *channel = toggl_get_update_channel(ctx);
-    QString res;
-    if (channel) {
-        res = toQString(channel);
-        free(channel);
-    }
-    return res;
-}
-
 QString TogglApi::userEmail() {
     char_t *email = toggl_get_user_email(ctx);
     QString res;
     if (email) {
         res = toQString(email);
         free(email);
+    }
+    return res;
+}
+
+QString TogglApi::baseURL() {
+    char_t *url = toggl_get_base_url(ctx);
+    QString res;
+    if (url) {
+        res = toQString(url);
+        free(url);
     }
     return res;
 }
@@ -599,10 +617,6 @@ void TogglApi::fullSync() {
 
 void TogglApi::sync() {
     toggl_sync(ctx);
-}
-
-void TogglApi::openInBrowser() {
-    toggl_open_in_browser(ctx);
 }
 
 bool TogglApi::clearCache() {
@@ -681,6 +695,29 @@ bool TogglApi::setTimeEntryBillable(
                                          billable);
 }
 
+bool TogglApi::setTimeEntryActivity(
+    const QString guid,
+    const uint64_t activity_id) {
+    return toggl_set_time_entry_activity(ctx,
+                                         toCStr(guid),
+                                         activity_id);
+}
+
+bool TogglApi::setSettingsDefaultActivity(const uint64_t activity_id) {
+    return toggl_set_settings_default_activity(ctx, activity_id);
+}
+
+QString TogglApi::createEmptyTimeEntry(const int64_t started,
+                                       const int64_t ended) {
+    char_t *guid = toggl_create_empty_time_entry(ctx, started, ended);
+    QString res("");
+    if (guid) {
+        res = toQString(guid);
+        free(guid);
+    }
+    return res;
+}
+
 QString TogglApi::addProject(
     const QString time_entry_guid,
     const uint64_t workspace_id,
@@ -734,15 +771,6 @@ bool TogglApi::setTimeEntryDuration(
     return toggl_set_time_entry_duration(ctx,
                                          toCStr(guid),
                                          toCStr(value));
-}
-
-bool TogglApi::sendFeedback(const QString topic,
-                            const QString details,
-                            const QString filename) {
-    return toggl_feedback_send(ctx,
-                               toCStr(topic),
-                               toCStr(details),
-                               toCStr(filename));
 }
 
 void TogglApi::setShowHideKey(const QString keys) {

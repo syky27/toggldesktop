@@ -19,13 +19,13 @@ set(BINARY_SOURCE_FILES
     autocompletelistview.cpp
     autocompletelistmodel.cpp
     autocompleteview.cpp
+    calendarview.cpp
     clickablelabel.cpp
     clipboarddialog.cpp
     colorpicker.cpp
     countryview.cpp
     desktopservices.cpp
     errorviewcontroller.cpp
-    feedbackdialog.cpp
     genericview.cpp
     idlenotificationwidget.cpp
     loginwidget.cpp
@@ -53,7 +53,6 @@ set(BINARY_SOURCE_FILES
     clipboarddialog.ui
     colorpicker.ui
     errorviewcontroller.ui
-    feedbackdialog.ui
     idlenotificationwidget.ui
     loginwidget.ui
     mainwindowcontroller.ui
@@ -69,6 +68,10 @@ if (UNIX AND NOT APPLE)
     set (TOGGLDESKTOP_ADDITIONAL_LIBS
         -lX11 -lXss
     )
+elseif (APPLE)
+    set (TOGGLDESKTOP_ADDITIONAL_LIBS
+        "-framework IOKit" "-framework CoreFoundation"
+    )
 endif()
 
 # Set up compilation targets
@@ -77,7 +80,7 @@ add_executable(TogglDesktop ${BINARY_SOURCE_FILES})
 # And list the dependencies between them (and system libraries)
 target_link_libraries(TogglDesktop PRIVATE
     TogglDesktopLibrary
-    Qt5::Widgets Qt5::DBus Qt5::NetworkAuth
+    Qt5::Widgets Qt5::DBus Qt5::Network
     ${QXT_LIBRARIES}
     Bugsnag
     ${TOGGLDESKTOP_ADDITIONAL_LIBS}

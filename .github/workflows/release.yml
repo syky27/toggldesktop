@@ -1,0 +1,105 @@
+name: release
+
+# Build the Qt UI on macOS + Linux. On a `v*` tag, package (unsigned macOS .dmg,
+# Linux AppImage) and publish a GitHub Release. On branch push / PR, build only.
+on:
+  push:
+    branches: [syky27/sun-valley]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed by the release job to create/upload the GitHub Release
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # tags must be present for the CMake git-describe version
+      - name: Install dependencies
+        run: brew install cmake pkg-config qt@5 openssl@3 poco jsoncpp
+      - name: Configure
+        run: |
+          QT_PREFIX="$(brew --prefix qt@5)"
+          SSL_PREFIX="$(brew --prefix openssl@3)"
+          POCO_PREFIX="$(brew --prefix poco)"
+          JSONCPP_PREFIX="$(brew --prefix jsoncpp)"
+          cmake -S . -B build \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DCMAKE_PREFIX_PATH="${QT_PREFIX};${POCO_PREFIX};${JSONCPP_PREFIX}" \
+            -DOPENSSL_ROOT_DIR="${SSL_PREFIX}" \
+            -DPOCO_INCLUDE_DIRS="${POCO_PREFIX}/include" \
+            -DJSONCPP_INCLUDE_DIRS="${JSONCPP_PREFIX}/include"
+      - name: Build (sanity)
+        run: cmake --build build --target TogglDesktop -j3
+      - name: Package .dmg
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: dist/mac/package-mac.sh
+      - name: Upload .dmg
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: build/pkg-mac/*.dmg
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config file fuse libfuse2 patchelf curl \
+            qtbase5-dev qtbase5-private-dev libqt5x11extras5-dev libqt5svg5-dev \
+            libpoco-dev libjsoncpp-dev libssl-dev libxss-dev libxmu-dev libx11-dev \
+            libgl-dev libreadline-dev
+      - name: Configure (system libs)
+        run: |
+          cmake -S . -B build-appimage \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DTOGGL_BUILD_TESTS=OFF
+      - name: Build (sanity)
+        run: cmake --build build-appimage --target TogglDesktop -j"$(nproc)"
+      - name: Package AppImage
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: dist/linux/appimage.sh
+      - name: Upload AppImage
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: '*.AppImage'
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, linux]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Redtick ${{ github.ref_name }}
+          files: |
+            artifacts/macos-dmg/*.dmg
+            artifacts/linux-appimage/*.AppImage
+          body: |
+            **Redtick ${{ github.ref_name }}** — a Redmine-native time tracker (Toggl Desktop fork).
+
+            ### Downloads
+            - **macOS**: `Redtick-*.dmg` — **unsigned**. First launch: right-click the app → **Open**
+              (or run `xattr -dr com.apple.quarantine /Applications/Redtick.app`).
+            - **Linux**: `Redtick-*-x86_64.AppImage` — `chmod +x` then run.
+
+            Log in with your Redmine URL + personal API key.
+
+            _Built with Claude Code._

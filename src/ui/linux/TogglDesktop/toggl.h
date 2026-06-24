@@ -76,13 +76,11 @@ class TogglApi : public QObject {
     void setEnvironment(const QString environment);
 
     void login(const QString email, const QString password);
+    void setBaseURL(const QString url);
+    void searchIssues(const QString &query);
 
     void signup(const QString email, const QString password,
                 const uint64_t countryID);
-
-    void googleLogin(const QString accessToken);
-
-    void googleSignup(const QString &accessToken, uint64_t countryID);
 
     QString start(const QString &description,
         const QString &duration,
@@ -98,8 +96,6 @@ class TogglApi : public QObject {
     bool continueTimeEntry(const QString guid);
 
     bool continueLatestTimeEntry();
-
-    void openInBrowser();
 
     void fullSync();
 
@@ -149,6 +145,18 @@ class TogglApi : public QObject {
         const QString guid,
         const bool billable);
 
+    // Redmine fork: set/clear the entry's TimeEntryActivity id.
+    bool setTimeEntryActivity(
+        const QString guid,
+        const uint64_t activity_id);
+
+    // Redmine fork: persist the default TimeEntryActivity id for new entries.
+    bool setSettingsDefaultActivity(const uint64_t activity_id);
+
+    // Create an empty entry over [start, end] (used by the calendar's
+    // click-empty-to-create). Returns the new entry's GUID.
+    QString createEmptyTimeEntry(const int64_t started, const int64_t ended);
+
     bool setTimeEntryDate(
         const QString guid,
         const int64_t unix_timestamp);
@@ -160,6 +168,15 @@ class TogglApi : public QObject {
     bool setTimeEntryStop(
         const QString guid,
         const QString value);
+
+    // Timestamp-based start/end edits used by the calendar drag/resize.
+    bool setTimeEntryStartTimestamp(
+        const QString guid,
+        const int64_t start,
+        const bool keepEndTimeFixed);
+    bool setTimeEntryEndTimestamp(
+        const QString guid,
+        const int64_t end);
 
     QString addProject(
         const QString time_entry_guid,
@@ -215,10 +232,8 @@ class TogglApi : public QObject {
     void toggleTimelineRecording(
         const bool recordTimeline);
 
-    bool setUpdateChannel(const QString channel);
-    QString updateChannel();
-
     QString userEmail();
+    QString baseURL();
 
     // keyboard shortcut saving
     void setShowHideKey(const QString keys);
@@ -231,10 +246,6 @@ class TogglApi : public QObject {
     void loadMore();
     void tosAccept();
     void openLegal(const QString &link);
-
-    bool sendFeedback(const QString topic,
-                      const QString details,
-                      const QString filename);
 
     bool discardTimeAt(const QString guid,
                        const uint64_t at,
@@ -268,9 +279,6 @@ class TogglApi : public QObject {
     void aboutToDisplayOverlay();
     void displayOverlay(
         const int64_t type);
-
-    void displayUpdate(
-        const QString url);
 
     void displayOnlineState(
         int64_t state);
@@ -338,6 +346,10 @@ class TogglApi : public QObject {
     void displayWorkspaceSelect(
         QVector<GenericView *> list);
 
+    // Redmine fork: the global TimeEntryActivity list.
+    void displayActivities(
+        QVector<GenericView *> list);
+
     void updateShowHideShortcut();
 
     void updateContinueStopShortcut();
@@ -364,7 +376,6 @@ void on_display_error(
     const char_t *errmsg,
     const bool_t user_error);
 void on_overlay(const int64_t type);
-void on_display_update(const char_t *url);
 void on_display_online_state(
     const bool is_online);
 void on_display_url(const char_t *url);
@@ -387,6 +398,8 @@ void on_display_mini_timer_autocomplete(
 void on_display_project_autocomplete(
     TogglAutocompleteView *first);
 void on_display_workspace_select(
+    TogglGenericView *first);
+void on_display_activities(
     TogglGenericView *first);
 void on_display_client_select(
     TogglGenericView *first);

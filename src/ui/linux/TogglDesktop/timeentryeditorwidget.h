@@ -53,6 +53,9 @@ class TimeEntryEditorWidget : public QWidget {
     bool clientSelectNeedsUpdate;
     QString recentlyAddedClient;
 
+    // Redmine fork: the global TimeEntryActivity list (id + name) for the combo.
+    QVector<GenericView *> activitySelectUpdate;
+
     ColorPicker *colorPicker;
 
     QTimer *timer;
@@ -90,6 +93,9 @@ class TimeEntryEditorWidget : public QWidget {
     void displayWorkspaceSelect(
         QVector<GenericView *> list);
 
+    void displayActivities(
+        QVector<GenericView *> list);
+
     void displayClientSelect(
         QVector<GenericView *> list);
 
@@ -114,6 +120,7 @@ class TimeEntryEditorWidget : public QWidget {
     void on_stop_editingFinished();
     void on_dateEdit_editingFinished();
     void on_billable_clicked(bool checked);
+    void on_activity_activated(int index);
     void on_tags_itemClicked(QListWidgetItem *item);
     void on_addNewClient_clicked();
     void on_addClientButton_clicked();

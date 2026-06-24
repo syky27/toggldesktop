@@ -50,7 +50,8 @@ class TOGGL_INTERNAL_EXPORT Settings : public BaseModel {
     , start_autotracker_while_timer_is_running(false)
     , active_tab(0)
     , color_theme(0)
-    , force_ignore_cert(false) {}
+    , force_ignore_cert(false)
+    , default_activity_id(0) {}
 
     virtual ~Settings() {}
 
@@ -88,6 +89,8 @@ class TOGGL_INTERNAL_EXPORT Settings : public BaseModel {
     Poco::UInt8 active_tab;
     Poco::UInt8 color_theme;
     bool force_ignore_cert;
+    // Redmine fork: default TimeEntryActivity id applied to new entries.
+    Poco::UInt64 default_activity_id;
 
     bool IsSame(const Settings &other) const;
 

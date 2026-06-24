@@ -6,8 +6,11 @@
 #include <QKeyEvent>
 #include <QMessageBox>
 #include <QListWidgetItem>
+#include <QUrl>
+#include <QFont>
 
 #include "./toggl.h"
+#include "./desktopservices.h"
 
 TimeEntryCellWidget::TimeEntryCellWidget(QListWidgetItem *item) : QWidget(nullptr),
 ui(new Ui::TimeEntryCellWidget),
@@ -24,6 +27,11 @@ timeEntry(nullptr) {
     ui->dataFrame->installEventFilter(this);
     setStyleSheet(
         "* { font-size: 13px }"
+        // Issue line on top (prominent), description underneath (secondary).
+        // These explicit rules beat the blanket "*" font-size above; the
+        // matching QFonts set below keep the ellipsis width math accurate.
+        "ClickableLabel#project { font-size: 14px; font-weight: bold }"
+        "ClickableLabel#description { font-size: 12px; color: #5a5a5a }"
         "QFrame { background-color:transparent; border:none; margin:0 }"
         "QPushButton#dataFrame { background-color:#fefefe; border: none; border-bottom:1px solid #cacaca; margin: 0 }"
         "QPushButton#dataFrame:flat { background-color:transparent; }"
@@ -33,6 +41,26 @@ timeEntry(nullptr) {
         "QPushButton:!checked { background:url(:/images/group_icon_closed.svg) no-repeat; }"
         "QPushButton:checked { background:url(:/images/group_icon_open.svg) no-repeat; }"
     );
+
+    // Keep the real QFont in sync with the stylesheet font-size so that
+    // setEllipsisTextToLabel() (which measures with label->font()) elides at
+    // the right width and the text never overflows the row.
+    QFont projectFont = ui->project->font();
+    projectFont.setPixelSize(14);
+    projectFont.setBold(true);
+    ui->project->setFont(projectFont);
+
+    QFont descriptionFont = ui->description->font();
+    descriptionFont.setPixelSize(12);
+    ui->description->setFont(descriptionFont);
+
+    // The project label doubles as a clickable Redmine issue link. Let the
+    // label handle link clicks itself (so linkActivated fires) and open the
+    // issue in the browser instead of following the link internally.
+    ui->project->setOpenExternalLinks(false);
+    ui->project->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
+    connect(ui->project, &QLabel::linkActivated,
+            this, &TimeEntryCellWidget::issueLinkActivated);
 }
 
 void TimeEntryCellWidget::display(TimeEntryView *view) {
@@ -46,8 +74,7 @@ void TimeEntryCellWidget::display(TimeEntryView *view) {
     project = view->ProjectAndTaskLabel;
 
     setEllipsisTextToLabel(ui->description, description);
-    setEllipsisTextToLabel(ui->project, project);
-    ui->project->setStyleSheet("color: '" + getProjectColor(view->Color) + "'");
+    setProjectLabel(view);
     ui->duration->setText(view->Duration);
 
     ui->billable->setVisible(view->Billable);
@@ -156,11 +183,14 @@ void TimeEntryCellWidget::setupGroupedMode(TimeEntryView *view) {
     QString style = "#dataFrame{border-right:2px solid palette(alternate-base);border-bottom:2px solid palette(alternate-base);background-color: palette(base);}\n #dataFrame:focus{background-color: palette(highlight);}";
     QString count = "";
     QString continueIcon = ":/images/continue_light.svg";
-    QString descriptionStyle = "border:none;";
+    // Description is the secondary (under-the-issue) line: small + muted. This
+    // per-widget stylesheet overrides the cell-level rule, so repeat the
+    // size/colour here to keep it secondary.
+    QString descriptionStyle = "border:none;font-size:12px;color:#5a5a5a;";
     int left = 0;
     if (view->GroupItemCount && view->GroupOpen && !view->Group) {
         left = 10;
-        descriptionStyle = "border:none;color:palette(mid)";
+        descriptionStyle = "border:none;font-size:12px;color:palette(mid);";
     }
     ui->description->setStyleSheet(descriptionStyle);
     ui->descProjFrame->layout()->setContentsMargins(left, 9, 9, 9);
@@ -183,6 +213,59 @@ void TimeEntryCellWidget::setEllipsisTextToLabel(ClickableLabel *label, QString 
     int width = label->width() - 2;
     QString clippedText = metrix.elidedText(text, Qt::ElideRight, width);
     label->setText(clippedText);
+}
+
+void TimeEntryCellWidget::setProjectLabel(TimeEntryView *view) {
+    // The prominent top line is the Redmine issue (Toggl "task"): "#id: name".
+    // Fall back to the combined project/task label, then the project, so the
+    // line is never empty for entries without an issue.
+    taskPlainText = view->TaskLabel;
+    if (taskPlainText.isEmpty())
+        taskPlainText = view->ProjectAndTaskLabel;
+    if (taskPlainText.isEmpty())
+        taskPlainText = view->ProjectLabel;
+
+    // Build the issue URL only when we have an issue id and a configured base
+    // URL; otherwise the line renders as plain (non-link) text.
+    issueUrl.clear();
+    QString baseUrl = TogglApi::instance->baseURL();
+    if (view->TID > 0 && !baseUrl.isEmpty()) {
+        issueUrl = baseUrl + "/issues/" + QString::number(view->TID);
+    }
+
+    projectColor = getProjectColor(view->Color);
+
+    renderProjectLabel();
+}
+
+void TimeEntryCellWidget::renderProjectLabel() {
+    // Elide against the label's actual font so the line never overflows, then
+    // render either a Redmine issue link (rich text) or plain coloured text.
+    QFontMetrics metrix(ui->project->font());
+    int width = ui->project->width() - 2;
+    QString elided = metrix.elidedText(taskPlainText, Qt::ElideRight, width);
+
+    if (!issueUrl.isEmpty()) {
+        ui->project->setText(
+            QString("<a href=\"%1\" style=\"color:%2;text-decoration:none;\">%3</a>")
+                .arg(issueUrl.toHtmlEscaped(),
+                     projectColor,
+                     elided.toHtmlEscaped()));
+        ui->project->setStyleSheet("");
+        ui->project->setCursor(Qt::PointingHandCursor);
+    }
+    else {
+        ui->project->setText(elided.toHtmlEscaped());
+        ui->project->setStyleSheet("color: '" + projectColor + "'");
+        ui->project->setCursor(Qt::ArrowCursor);
+    }
+}
+
+void TimeEntryCellWidget::issueLinkActivated(const QString &link) {
+    if (link.isEmpty())
+        return;
+    QMetaObject::invokeMethod(DesktopServices::instance(), "openUrl",
+                              Q_ARG(QUrl, QUrl(link)));
 }
 
 void TimeEntryCellWidget::labelClicked(QString field_name) {
@@ -231,7 +314,7 @@ void TimeEntryCellWidget::on_groupButton_clicked()
 void TimeEntryCellWidget::resizeEvent(QResizeEvent* event)
 {
     setEllipsisTextToLabel(ui->description, description);
-    setEllipsisTextToLabel(ui->project, project);
+    renderProjectLabel();
     QWidget::resizeEvent(event);
 }
 

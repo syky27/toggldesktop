@@ -1,11 +1,10 @@
 name: Build
 
 on:
-  push:
-    branches:
-      - '**'
-  release:
-    types: [ created ]
+  # Legacy Toggl pipeline (builds the dropped WPF/Cocoa apps). Disabled and kept
+  # for history only — run manually if ever needed. The active pipeline that
+  # builds the Qt UI and publishes releases is .github/workflows/release.yml.
+  workflow_dispatch:
 
 jobs:
   # macos:

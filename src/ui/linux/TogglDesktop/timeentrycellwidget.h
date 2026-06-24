@@ -42,6 +42,7 @@ class TimeEntryCellWidget : public QWidget {
     void on_groupButton_clicked();
     void on_loadMoreButton_clicked();
     void on_dataFrame_clicked();
+    void issueLinkActivated(const QString &link);
 
  private:
     Ui::TimeEntryCellWidget *ui;
@@ -54,10 +55,18 @@ class TimeEntryCellWidget : public QWidget {
     bool groupOpen;
     QString groupName;
     TimeEntryView *timeEntry;
+    // Plain "#id: name" text for the issue line (used for ellipsis measuring),
+    // its resolved Redmine URL (empty when there's nothing to link to) and the
+    // colour to render it in. Cached so resizeEvent() can re-elide/re-render.
+    QString taskPlainText;
+    QString issueUrl;
+    QString projectColor;
     QString getProjectColor(QString color);
 
     void setupGroupedMode(TimeEntryView *view);
     void setEllipsisTextToLabel(ClickableLabel *label, QString text);
+    void setProjectLabel(TimeEntryView *view);
+    void renderProjectLabel();
 };
 
 #endif  // SRC_UI_LINUX_TOGGLDESKTOP_TIMEENTRYCELLWIDGET_H_

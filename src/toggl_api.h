@@ -59,6 +59,8 @@ extern "C" {
         char_t *Color;
         char_t *GUID;
         bool_t Billable;
+        // Redmine TimeEntryActivity id (Redmine fork).
+        uint64_t ActivityID;
         char_t *Tags;
         uint64_t Started;
         uint64_t Ended;
@@ -197,6 +199,8 @@ extern "C" {
         uint8_t ActiveTab;
         uint8_t ColorTheme;
         bool_t ForceIgnoreCert;
+        // Redmine fork: default TimeEntryActivity id for new entries.
+        uint64_t DefaultActivityID;
     } TogglSettingsView;
 
     typedef struct {
@@ -358,9 +362,6 @@ extern "C" {
     typedef void (*TogglContinueSignIn)(
     );
 
-    typedef void (*TogglDisplayLoginSSO)(
-        const char_t *sso_url);
-
     typedef void (*TogglDisplayIdleNotification)(
         const char_t *guid,
         const char_t *since,
@@ -433,6 +434,13 @@ extern "C" {
     TOGGL_EXPORT void toggl_set_cacert_path(
         void *context,
         const char_t *path);
+
+    // Redmine backend base URL (e.g. https://redmine.example.com).
+    // Set before logging in.
+
+    TOGGL_EXPORT void toggl_set_base_url(
+        void *context,
+        const char_t *url);
 
     // DB path must be configured from UI
 
@@ -575,6 +583,11 @@ extern "C" {
         void *context,
         TogglDisplayViewItems cb);
 
+    // Redmine fork: the global TimeEntryActivity list (editor + Preferences).
+    TOGGL_EXPORT void toggl_on_activities(
+        void *context,
+        TogglDisplayViewItems cb);
+
     TOGGL_EXPORT void toggl_on_client_select(
         void *context,
         TogglDisplayViewItems cb);
@@ -644,44 +657,6 @@ extern "C" {
         const char_t *password,
         const uint64_t country_id);
 
-    TOGGL_EXPORT bool_t toggl_google_signup(
-        void *context,
-        const char_t *access_token,
-        const uint64_t country_id);
-
-    TOGGL_EXPORT bool_t toggl_google_signup_async(
-        void *context,
-        const char_t *access_token,
-        const uint64_t country_id);
-
-    TOGGL_EXPORT bool_t toggl_google_login(
-        void *context,
-        const char_t *access_token);
-
-    TOGGL_EXPORT bool_t toggl_google_login_async(
-        void *context,
-        const char_t *access_token);
-
-    TOGGL_EXPORT bool_t toggl_apple_login(
-        void *context,
-        const char_t *access_token);
-
-    TOGGL_EXPORT bool_t toggl_apple_login_async(
-        void *context,
-        const char_t *access_token);
-
-    TOGGL_EXPORT bool_t toggl_apple_signup(
-        void *context,
-        const char_t *access_token,
-        const uint64_t country_id,
-        const char_t *full_name);
-
-    TOGGL_EXPORT bool_t toggl_apple_signup_async(
-        void *context,
-        const char_t *access_token,
-        const uint64_t country_id,
-        const char_t *full_name);
-
     TOGGL_EXPORT void toggl_password_forgot(
         void *context);
 
@@ -691,21 +666,12 @@ extern "C" {
     TOGGL_EXPORT void toggl_privacy_policy(
         void *context);
 
-    TOGGL_EXPORT void toggl_open_in_browser(
-        void *context);
-
     TOGGL_EXPORT bool_t toggl_accept_tos(
         void *context);
 
     TOGGL_EXPORT void toggl_get_support(
         void *context,
         const int type);
-
-    TOGGL_EXPORT bool_t toggl_feedback_send(
-        void *context,
-        const char_t *topic,
-        const char_t *details,
-        const char_t *filename);
 
     TOGGL_EXPORT void toggl_search_help_articles(
         void *context,
@@ -804,6 +770,12 @@ extern "C" {
         void *context,
         const char_t *guid,
         bool_t value);
+
+    // Redmine fork: set the entry's TimeEntryActivity id.
+    TOGGL_EXPORT bool_t toggl_set_time_entry_activity(
+        void *context,
+        const char_t *guid,
+        const uint64_t activity_id);
 
     TOGGL_EXPORT bool_t toggl_set_time_entry_description(
         void *context,
@@ -915,6 +887,11 @@ extern "C" {
     TOGGL_EXPORT bool_t toggl_set_settings_color_theme(
         void *context,
         const uint8_t color_theme);
+
+    // Redmine fork: persist the default TimeEntryActivity id for new entries.
+    TOGGL_EXPORT bool_t toggl_set_settings_default_activity(
+        void *context,
+        const uint64_t activity_id);
 
     TOGGL_EXPORT bool_t toggl_set_settings_idle_minutes(
         void *context,
@@ -1124,6 +1101,10 @@ extern "C" {
     TOGGL_EXPORT char_t *toggl_get_user_email(
         void *context);
 
+    // Redmine base URL (urls::BaseURL()). You must free() the result.
+    TOGGL_EXPORT char_t *toggl_get_base_url(
+        void *context);
+
     TOGGL_EXPORT void toggl_sync(
         void *context);
 
@@ -1288,6 +1269,12 @@ extern "C" {
     TOGGL_EXPORT void toggl_load_more(
         void *context);
 
+    // Live-search Redmine issues by number or subject and refresh the issue/task
+    // autocomplete with the matches.
+    TOGGL_EXPORT void toggl_search_issues(
+        void *context,
+        const char_t *query);
+
     TOGGL_EXPORT void track_window_size(
         void *context,
         const uint64_t width,
@@ -1361,28 +1348,9 @@ extern "C" {
         void *context,
         TogglContinueSignIn cb);
 
-    TOGGL_EXPORT void toggl_on_display_login_sso(
-        void *context,
-        TogglDisplayLoginSSO cb);
-
     TOGGL_EXPORT TogglHsvColor toggl_get_adaptive_hsv_color(
        TogglRgbColor rgbColor,
        TogglAdaptiveColor type);
-
-    TOGGL_EXPORT bool_t toggl_get_identity_provider_sso(
-        void *context,
-        const char_t *email);
-
-    TOGGL_EXPORT void toggl_set_need_enable_SSO(
-        void *context,
-        const char_t *code);
-
-    TOGGL_EXPORT void toggl_reset_enable_SSO(
-        void *context);
-
-    TOGGL_EXPORT void toggl_login_sso(
-        void *context,
-        const char_t *api_token);
     
     TOGGL_EXPORT void toggl_track_timeline_menu_context(
         void *context,

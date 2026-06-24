@@ -100,8 +100,6 @@
 #define kOneLoginAttemptLeft "Incorrect email or password. One more try before account gets locked for 5 minutes."
 #define kAccountIsLocked "Incorrect email or password. Account is locked for 5 minutes. Account owner has been notified."
 #define kIncorrectEmailOrPassword "Incorrect email or password. Please try again."
-#define kSSONotConfigure "SSO is not configured for this email address"
-#define kBetterSSONotConfigure "Single Sign On is not configured for your email address. Please try a different login method or contact your administrator."
 
 #define kModelAutotrackerRule "autotracker_rule"
 #define kModelClient "client"
@@ -126,10 +124,6 @@
 #define kTogglDesktopClientID_MacOS "toggldesktop.TogglDesktop"
 #define kAPIV8 "v8"
 #define kAPIV9 "v9"
-#define kGoogleProvider "google"
-#define kAppleProvider "apple"
-#define kGoogleAccessToken "google_access_token"
-#define kAppleAccessToken "apple_token"
 
 // there was a typo in the initial set of flags, use both variants
 #define kSyncStrategyLegacy1 "dekstop_sync_client"

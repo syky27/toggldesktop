@@ -833,11 +833,6 @@ TEST(toggl_api, toggl_set_idle_seconds) {
     ASSERT_NE("", testing::testresult::idle_guid);
 }
 
-TEST(toggl_api, toggl_open_in_browser) {
-    testing::App app;
-    toggl_open_in_browser(app.ctx());
-}
-
 TEST(toggl_api, toggl_get_support) {
     testing::App app;
     toggl_get_support(app.ctx(), 0);
@@ -848,11 +843,6 @@ TEST(toggl_api, toggl_get_support) {
 TEST(toggl_api, toggl_login) {
     testing::App app;
     toggl_login(app.ctx(), STR("username"), STR("password"));
-}
-
-TEST(toggl_api, toggl_google_login) {
-    testing::App app;
-    toggl_google_login(app.ctx(), STR("token"));
 }
 
 TEST(toggl_api, toggl_sync) {
@@ -1692,15 +1682,6 @@ TEST(toggl_api, toggl_search_help_articles) {
         testing::testresult::help_article_names.end(),
         "Basics") !=
                 testing::testresult::help_article_names.end());
-}
-
-TEST(toggl_api, toggl_feedback_send) {
-    testing::App app;
-    std::string json = loadTestData();
-    ASSERT_TRUE(testing_set_logged_in_user(app.ctx(), json.c_str()));
-
-    ASSERT_TRUE(toggl_feedback_send(app.ctx(),
-                                    STR("Help"), STR("I need help"), STR("")));
 }
 
 TEST(toggl_api, toggl_set_time_entry_date) {

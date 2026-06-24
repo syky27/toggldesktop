@@ -77,6 +77,12 @@ bool QxtGlobalShortcutPrivate::setShortcut(const QKeySequence& shortcut)
     Qt::KeyboardModifiers allMods = Qt::ShiftModifier | Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier;
     key = shortcut.isEmpty() ? Qt::Key(0) : Qt::Key((shortcut[0] ^ allMods) & shortcut[0]);
     mods = shortcut.isEmpty() ? Qt::KeyboardModifiers() : Qt::KeyboardModifiers(shortcut[0] & allMods);
+    // Never register an empty/unset shortcut. nativeKeycode(Qt::Key(0)) resolves
+    // to native keycode 0, which on macOS is the 'a' key (kVK_ANSI_A) -- so an
+    // unconfigured global shortcut would otherwise grab 'a' system-wide and fire
+    // on every 'a' keystroke. Leaving key/mods at 0 makes unset a safe no-op.
+    if (shortcut.isEmpty())
+        return true;
     const quint32 nativeKey = nativeKeycode(key);
     const quint32 nativeMods = nativeModifiers(mods);
     const bool res = registerShortcut(nativeKey, nativeMods);

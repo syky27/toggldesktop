@@ -1,169 +1,123 @@
-### ⚠️ Project Status: Superseded by new rewritten apps.
-
-We have rewritten our MacOS and Windows apps and for that reason **we will no longer implement nor accept pull requests** implementing new features in this repository.
-
-If you'd like to try these rewritten native apps, visit:
-
-* [ ] 🍏 [MacOS Toggl Track](https://toggl.com/track/time-tracking-mac)
-* [ ] 🖥 [Windows Toggl Track](https://toggl.com/track/time-tracking-windows/)
-
-<h1></h1>
-
 <h1 align="center">
-  <a href="https://toggl.com"><img src="https://raw.githubusercontent.com/toggl-open-source/toggldesktop/gh-pages/assets/toggl-track-wide.png" alt="Toggl Track"></a>
+  <img src="docs/redtick-wordmark.png" alt="Redtick" width="420">
 </h1>
 
-<h4 align="center">Native desktop applications for the leading time tracking tool <a href="https://toggl.com" target="_blank">Toggl</a>.</h4>
+<h4 align="center">A Redmine-native time tracker — the Toggl Desktop experience, wired straight to your own <a href="https://www.redmine.org" target="_blank">Redmine</a>.</h4>
 
 <p align="center">
-    <a href="https://github.com/toggl-open-source/toggldesktop/commits/master">
-    <img src="https://img.shields.io/github/last-commit/toggl-open-source/toggldesktop.svg?style=flat&logo=github&logoColor=white"
-         alt="GitHub last commit">
-    <a href="https://github.com/toggl/toggldesktop/issues">
-    <img src="https://img.shields.io/github/issues-raw/toggl-open-source/toggldesktop.svg?style=flat&logo=github&logoColor=white"
-         alt="GitHub issues">
-    <a href="https://github.com/toggl/toggldesktop/pulls">
-    <img src="https://img.shields.io/github/issues-pr-raw/toggl-open-source/toggldesktop.svg?style=flat&logo=github&logoColor=white"
-         alt="GitHub pull requests">
-    <img src="https://img.shields.io/badge/licence-BSD--3-green"
-         alt="Licence BSD-3">
+  <img src="https://img.shields.io/badge/backend-Redmine-A11C1C?style=flat" alt="Redmine backend">
+  <img src="https://img.shields.io/badge/built%20with-Claude%20Code-D97757?style=flat" alt="Built with Claude Code">
+  <img src="https://img.shields.io/badge/macOS-verified-444?style=flat" alt="macOS verified">
+  <img src="https://img.shields.io/badge/licence-BSD--3-green" alt="Licence BSD-3">
 </p>
 
 <p align="center">
   <a href="#about">About</a> •
-  <a href="#download">Download</a> •
+  <a href="#built-with-claude-code">Built with Claude Code</a> •
+  <a href="#how-it-works">How it works</a> •
+  <a href="#configure">Configure</a> •
   <a href="#build">Build</a> •
-  <a href="#change-log">Change log</a> •
-  <a href="#contribute">Contribute</a>
+  <a href="#credits">Credits</a>
 </p>
 
 # About
 
-  **Toggl Desktop** is a Toggl time tracking client with many helper functions that make tracking time more effortless and smooth. Features such as Idle detection, reminders to track and Pomodoro Timer make this app a great companion when productivity and efficiency is the goal.
+**Redtick** is a community fork of [Toggl Desktop](https://github.com/toggl-open-source/toggldesktop) that swaps the Toggl cloud backend for **Redmine**. You keep the fast, friendly desktop timer, but every entry you track lands in your own Redmine instance instead of Toggl's servers.
 
-<img src="https://user-images.githubusercontent.com/842229/63856838-3a869580-c9ab-11e9-9e36-7db23059ce29.png"
-         alt="Toggl Desktop apps">
+No Toggl account. No third-party cloud. Your time data stays on the Redmine server you point it at.
 
-# Download
+What it does today (verified on macOS):
 
-Toggl built and signed apps for all platforms
+- **Log in with a Redmine URL + personal API key** — no passwords, no OAuth, no SSO.
+- **Projects and your issues load automatically**, and you can **search any issue your token can see** — by issue number or by text, not just the ones assigned to you.
+- **Start/stop a timer on a Redmine issue.** On stop it creates a Redmine time entry with `hours`, `spent_on`, `activity`, comments, and the exact start/stop timestamps stored in custom fields. Edits `PUT`, deletes `DELETE`.
+- **Every entry must be linked to a Redmine issue** — the timer refuses to start without one.
+- **Day calendar view** with draggable blocks: move/resize entries, click an empty slot to create one, click a block to edit. A timer that runs past local midnight is split into one entry per day so Redmine's per-day hours stay correct.
+- **Activity picker** — choose a default activity in Preferences and override it per entry; activities are pulled live from Redmine.
+- **Pause-on-idle**, reminders and Pomodoro carry over from Toggl Desktop. The idle prompt lets you keep or discard idle time.
 
-## Mac
+# Built with Claude Code
 
-<br>
-<a href="https://toggl.github.io/toggldesktop/download/macos-stable/">64bit dmg</a>&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;<a href='https://itunes.apple.com/ee/app/toggl-desktop/id957734279?mt=12'>
-  Mac App Store</a>
-<br/>
-<br/>
-<i>Officially macOS 10.11 and newer stable macOS versions are supported.</i>
+This fork was implemented **almost entirely by [Claude Code](https://claude.com/claude-code)** (Anthropic) — the Redmine backend retarget, the removal of Toggl-only cruft, the calendar/issue-picker UI, and this RedTick rebrand. Every commit on this branch is Claude-attributed by design. Treat the code accordingly: it has been built and verified, but it is AI-authored and benefits from review before you rely on it.
 
-## Windows
+# How it works
 
-<br/>
-<a href="https://toggl.github.io/toggldesktop/download/windows64-stable/">64bit installer</a>&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;<a href="https://toggl.github.io/toggldesktop/download/windows-stable/">32bit installer</a>&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;<a href="https://chocolatey.org/packages/toggl">Chocolatey</a>&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;<a href='//www.microsoft.com/store/apps/9nk3rf9nbjnp?cid=storebadge&ocid=badge'>Microsoft Store</a>
-<br/>
-<br/>
-<i>App has been tested on Windows 7, 8, 8.1 and 10. Toggl Desktop Windows app has not been tested on Surface type touchscreen environments.</i>
+Toggl's hardcoded backend hosts are replaced with a **single, runtime-configurable Redmine base URL** (`src/urls.cc`). Every endpoint the app used to spread across separate Toggl hosts now resolves to that one Redmine base:
 
-## Linux
+```cpp
+std::string API()        { return BaseURL(); }
+std::string SyncAPI()    { return BaseURL(); }
+std::string WebSocket()  { return BaseURL(); }
+// …all resolve to the configurable Redmine base
+```
 
-<br>
-<a href="https://toggl.github.io/toggldesktop/download/linux_tar.gz-stable/">Tarball</a>&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;<a href='https://flathub.org/apps/details/com.toggl.TogglDesktop'>Flathub</a>&nbsp;&nbsp;&nbsp;&nbsp;
-<br/>
-<br/>
-<i>Only 64bit is supported</i>
+The base URL is set at runtime on the login screen via `urls::SetBaseURL()` and persisted beside the local database, so it survives restarts. For headless / CI runs it falls back to the **`TOGGL_REDMINE_URL`** environment variable. Nothing is hardcoded to an internal host. A small `RedmineClient` (`src/redmine_client.{h,cc}`) fans the login out across Redmine's `/users/current`, `/projects`, `/issues`, `/time_entries` and activity endpoints and assembles what the existing model loader expects.
+
+# Configure
+
+1. Launch Redtick.
+2. On the login screen, enter the URL of your Redmine instance (e.g. `https://redmine.example.com`) and your personal **API key** (Redmine → *My account* → *API access key*).
+3. Start tracking — entries sync to that Redmine backend.
+
+Headless / scripted use:
+
+```bash
+export TOGGL_REDMINE_URL="https://redmine.example.com"
+./TogglDesktop
+```
 
 # Build
 
-Please check OS specific requirements below.
+Only the **Qt UI + C++ core** are built in this fork (the legacy macOS/Swift and Windows/WPF front-ends are not maintained here). macOS is the verified path; Linux uses the same CMake build.
 
-_By default the app builds for testing server. To use the compiled app with live server see this guide [https://github.com/toggl-open-source/toggldesktop/wiki/Building-Toggl-Desktop-from-source-for-usage-with-live-servers](https://github.com/toggl-open-source/toggldesktop/wiki/Building-Toggl-Desktop-from-source-for-usage-with-live-servers)_
+## macOS (verified)
 
-## macOS
-### Requirements
-- macOS 11+, Xcode 12.2+ and Swift 5+
-- Install Bundler
+One command from the repo root — it installs any missing Homebrew dependencies, configures CMake, builds, and launches the app:
+
 ```bash
-$ sudo gem install bundler
+./run-mac.sh
 ```
 
-### Build
-```bash
-# Prepare cocoapod
-$ make init_cocoapods
-```
-Run `bundle exec pod repo update` in case there is an error about out-of-date source repos (some pod version is missing).
+Equivalent manual build (modern Homebrew Qt 5 / POCO / OpenSSL 3 / jsoncpp):
 
-- Open workspace at `src/ui/osx/TogglDesktop.xcworkspace`
-- Select TogglDesktop scheme and build.
+```bash
+brew install pkg-config poco jsoncpp        # qt@5 + openssl@3 usually already present
+cmake -S . -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  -DCMAKE_PREFIX_PATH="$(brew --prefix qt@5);$(brew --prefix poco);$(brew --prefix jsoncpp)" \
+  -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" \
+  -DPOCO_INCLUDE_DIRS="$(brew --prefix poco)/include" \
+  -DJSONCPP_INCLUDE_DIRS="$(brew --prefix jsoncpp)/include"
+cmake --build build --target TogglDesktop -j8
+# run from the build dir so it finds the bundled cacert.pem
+cd build/src/ui/linux/TogglDesktop && ./TogglDesktop
+```
+
+The core links the **system OpenSSL 3**, so TLS to a modern Redmine works out of the box (the ancient bundled OpenSSL 1.0.1e is only used by the unmaintained Windows build).
 
 ## Linux
 
-### Dependencies
+Qt 5.12+ modules: **QtWidgets** (with private headers), **QtNetwork**, **QtDBus**, **QtX11Extras**. Plus `libXScrnSaver` (`libxss-dev` / `libXScrnSaver-devel`) and POCO / OpenSSL 3 / jsoncpp.
 
-You'll need these Qt (at version 5.12 or higher) modules: QtWidgets (with private headers), QtNetwork, QtNetworkAuth, QtDBus, QtX11Extras
-
-If Qt is not installed from your distribution's package manager, you will need to set the `CMAKE_PREFIX_PATH` environment variable to point to the `lib/cmake` folder in the Qt version you wish to use.
-
-These dependencies are mandatory:
- * libXScrnSaver (`libxss-dev` in deb-based distros and `libXScrnSaver-devel` in rpm-based)
-
- You can install them all in debian with a command:
 ```bash
- $ sudo apt install libxss-dev build-essential libgl-dev libreadline-dev
-
- ```
- 
-These dependencies are optional and will be bundled if the `USE_BUNDLED_LIBRARIES` CMake argument is set or your system does NOT have their development packages installed:
- * POCO
- * Lua
- * jsoncpp
- * Qxt
-
-These libraries will be bundled regardless of your system:
- * bugsnag-qt
- * qt-oauth-lib
-
-### Build the app
-
-*in the toggldesktop source tree root*
-```bash
-mkdir -p build && pushd build             # Create build directory
-cmake ..                                  # Setup cmake configs
-make -j8                                  # Build the app. The number defines the count of parallel jobs (number of your CPU cores is a good value for that)
-./src/ui/linux/TogglDesktop/TogglDesktop  # Run the built app
+sudo apt install build-essential libxss-dev libgl-dev libreadline-dev \
+                 qtbase5-dev qtbase5-private-dev libqt5x11extras5-dev \
+                 libpoco-dev libssl-dev libjsoncpp-dev
+mkdir -p build && cd build
+cmake ..
+make -j8
+./src/ui/linux/TogglDesktop/TogglDesktop
 ```
+
+> Note: Qt **NetworkAuth is no longer required** — the Google/SSO OAuth paths were removed in this fork.
 
 ## Windows
 
-Install Visual Studio 2019 with `.NET desktop development`, `Desktop development with C++` and `Universal Windows Platform development` components checked during installation. You can download free Visual Studio Community [here](https://visualstudio.microsoft.com/vs/community/).
+The legacy WPF client is not maintained in this fork and the Qt UI on Windows is currently **untested**. Contributions welcome.
 
-Then open the solution file `src\ui\windows\TogglDesktop\TogglDesktop.sln` and run it in `Debug` mode.
+# Credits
 
-The solution is using OpenSSL binaries. To rebuild OpenSSL from sources refer to [this page](docs/win/build-openSSL.md).
+Redtick is built on **[Toggl Desktop](https://github.com/toggl-open-source/toggldesktop)** by the Toggl team and open-source contributors, used under the **BSD-3-Clause** licence. Huge thanks to them — Redtick changes the backend and branding; the desktop client itself is their work. The original licence is retained in [`LICENSE`](LICENSE).
 
+The Redmine integration and rebrand were authored with **[Claude Code](https://claude.com/claude-code)** (Anthropic).
 
-# Change log
-
-Change log can be viewed at [http://toggl.github.io/toggldesktop/](http://toggl.github.io/toggldesktop/)
-
-# Contribute
-
-Before sending us a pull request, please format the source code:
-
-```bash
-$ make fmt
-```
-
-Also, please check for any cpplint issues:
-
-```bash
-$ make lint
-```
-
-Check if unit tests continue to pass:
-
-```bash
-$ make test
-```
-
+Redtick is not affiliated with or endorsed by Toggl, Anthropic, or the Redmine project.

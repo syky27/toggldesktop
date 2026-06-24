@@ -337,6 +337,7 @@ TogglTimeEntryView *time_entry_view_item_init(
     view_item->EndTimeString = copy_string(te.EndTimeString);
     view_item->DateDuration = copy_string(te.DateDuration);
     view_item->Billable = te.Billable;
+    view_item->ActivityID = te.ActivityID;
     if (te.Tags.empty()) {
         view_item->Tags = nullptr;
     } else {
@@ -495,6 +496,7 @@ TogglSettingsView *settings_view_item_init(
     view->ActiveTab = settings.active_tab;
     view->ColorTheme = settings.color_theme;
     view->ForceIgnoreCert = settings.force_ignore_cert;
+    view->DefaultActivityID = settings.default_activity_id;
     return view;
 }
 
@@ -620,7 +622,7 @@ TogglTimelineEventView *timeline_event_view_init(
     TogglTimelineEventView *event_view = new TogglTimelineEventView();
     event_view->Title = copy_string(event->Title());
     event_view->Filename = copy_string(event->Filename());
-    event_view->Duration = (std::min)(event->EndTime(), chunk_end) - (std::max)(event->Start(), chunk_start);
+    event_view->Duration = (std::min)(event->EndTime(), static_cast<Poco::Int64>(chunk_end)) - (std::max)(event->Start(), static_cast<Poco::Int64>(chunk_start));
     event_view->DurationString = copy_string(toggl::Formatter::FormatDuration(event_view->Duration, toggl::Format::ImprovedOnlyMinAndSec));
     event_view->Header = false;
     event_view->Next = nullptr;

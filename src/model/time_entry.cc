@@ -23,8 +23,10 @@
 #include <Poco/LocalDateTime.h>
 #include <Poco/Logger.h>
 #include <Poco/NumberParser.h>
+#include <Poco/DateTimeFormatter.h>
 #include <Poco/Timestamp.h>
 #include "toggl_api_private.h"
+#include "redmine_client.h"
 
 namespace toggl {
 
@@ -216,6 +218,7 @@ TimeEntry::TimeEntry(const TimeEntry &o)
     , Billable { o.Billable }
     , DurOnly { o.DurOnly }
     , SkipPomodoro { o.SkipPomodoro }
+    , ActivityID { o.ActivityID }
 {
 
 }
@@ -233,6 +236,11 @@ void TimeEntry::SetCreatedWith(const std::string &value) {
 
 void TimeEntry::SetBillable(bool value, bool userModified) {
     if (Billable.Set(value, userModified))
+        SetDirty();
+}
+
+void TimeEntry::SetActivityID(Poco::UInt64 value, bool userModified) {
+    if (ActivityID.Set(value, userModified))
         SetDirty();
 }
 
@@ -493,6 +501,7 @@ void TimeEntry::LoadFromJSON(const Json::Value &data, bool syncServer) {
         if (!updateMergeableProperty("tid", TID))
             SetTID(0, false);
     updateMergeableProperty("billable", Billable);
+    updateMergeableProperty("activity_id", ActivityID);
     updateMergeableProperty("duration", DurationInSeconds);
     updateMergeablePropertyConvert("start", StartTime, convertTimeString);
     updateMergeablePropertyConvert("stop", StopTime, convertTimeString);
@@ -590,6 +599,68 @@ Json::Value TimeEntry::SaveToJSON(int apiVersion) const {
     n["tags"] = tag_nodes;
 
     return n;
+}
+
+Json::Value TimeEntry::SaveToRedmineJSON() const {
+    Json::Value te;
+    // Every entry tracked from the app is linked to a Redmine issue; fall back
+    // to project only for robustness (the UI enforces issue selection).
+    if (TID()) {
+        te["issue_id"] = Json::UInt64(TID());
+    } else if (PID()) {
+        te["project_id"] = Json::UInt64(PID());
+    }
+
+    Poco::Int64 dur = DurationInSeconds();
+    if (dur < 0) {
+        dur = 0;  // running entries are kept local and not pushed
+    }
+    te["hours"] = static_cast<double>(dur) / 3600.0;
+
+    // spent_on is the LOCAL calendar date work started, so Redmine reports
+    // attribute the hours to the day the user actually worked.
+    Poco::LocalDateTime localStart(
+        Poco::Timestamp::fromEpochTime(StartTime()));
+    te["spent_on"] = Poco::DateTimeFormatter::format(localStart, "%Y-%m-%d");
+
+    te["comments"] = Description();
+    te["activity_id"] = Json::UInt64(
+        ActivityID() > 0 ? ActivityID()
+                         : static_cast<Poco::UInt64>(RedmineClient::kDefaultActivityID));
+
+    // Preserve exact start/stop clock times and the GUID (for idempotent
+    // matching) in the configured Redmine time-entry custom fields.
+    Json::Value custom_fields(Json::arrayValue);
+    auto addField = [&custom_fields](int id, const std::string &value) {
+        Json::Value cf;
+        cf["id"] = id;
+        cf["value"] = value;
+        custom_fields.append(cf);
+    };
+    // Prefer the recorded stop time; fall back to start + duration so the
+    // custom field is always a valid timestamp (setters don't recalculate it).
+    std::time_t stopTs = StopTime();
+    if (stopTs <= 0) {
+        stopTs = StartTime() + (dur > 0 ? dur : 0);
+    }
+    addField(RedmineClient::kCustomFieldStart, StartString());
+    addField(RedmineClient::kCustomFieldStop, Formatter::Format8601(stopTs));
+    addField(RedmineClient::kCustomFieldGUID, GUID());
+    te["custom_fields"] = custom_fields;
+
+    Json::Value root;
+    root["time_entry"] = te;
+    return root;
+}
+
+std::string TimeEntry::RedmineModelURL() const {
+    std::stringstream relative_url;
+    relative_url << "/time_entries";
+    if (ID()) {
+        relative_url << "/" << ID();
+    }
+    relative_url << ".json";
+    return relative_url.str();
 }
 
 Json::Value TimeEntry::SyncMetadata() const {

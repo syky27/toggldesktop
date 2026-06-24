@@ -15,6 +15,10 @@ std::string SyncAPI();
 std::string TimelineUpload();
 std::string WebSocket();
 
+// Redmine backend base URL, configured at runtime.
+std::string BaseURL();
+void SetBaseURL(const std::string &value);
+
 void SetUseStagingAsBackend(const bool value);
 
 bool IsUsingStagingAsBackend();

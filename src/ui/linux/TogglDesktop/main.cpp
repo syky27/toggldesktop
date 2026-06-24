@@ -1,6 +1,7 @@
 // Copyright 2014 Toggl Desktop developers.
 
 #include <QApplication>
+#include <QGuiApplication>
 #include <QCommandLineParser>
 #include <QDebug>
 #include <QMetaType>
@@ -33,6 +34,7 @@ class TogglApplication : public SingleApplication {
         : SingleApplication(argc, argv) {}
 
     virtual bool notify(QObject *receiver, QEvent *event);
+    bool event(QEvent *event) override;
 };
 
 bool TogglApplication::notify(QObject *receiver, QEvent *event) {
@@ -46,6 +48,21 @@ bool TogglApplication::notify(QObject *receiver, QEvent *event) {
                                 receiver->objectName());
     }
     return true;
+}
+
+bool TogglApplication::event(QEvent *event) {
+#ifdef Q_OS_MAC
+    // macOS Cmd+Q / app-menu Quit arrives as a QEvent::Quit. The default handler
+    // would close all windows, which our closeEvent turns into hide-to-menubar
+    // (so the app would never actually quit). Intercept it and really quit.
+    // (The red close button still sends a QCloseEvent and keeps hide behavior.)
+    if (event->type() == QEvent::Quit) {
+        if (auto *mw = qobject_cast<MainWindowController*>(w))
+            mw->quitApp();
+        return true;
+    }
+#endif
+    return SingleApplication::event(event);
 }
 
 int main(int argc, char *argv[]) try {
@@ -73,7 +90,7 @@ int main(int argc, char *argv[]) try {
     Bugsnag::app.version = APP_VERSION;
 
     QCommandLineParser parser;
-    parser.setApplicationDescription("Toggl Track");
+    parser.setApplicationDescription("Redtick");
     parser.addHelpOption();
     parser.addVersionOption();
 
@@ -117,6 +134,21 @@ int main(int argc, char *argv[]) try {
                                  parser.value(scriptPathOption));
 
     a.w = w;
+
+#ifdef Q_OS_MAC
+    // On macOS, relaunching via Spotlight/Alfred/Raycast/Dock is a "reopen"
+    // (no second process), which just reactivates the running app. If the window
+    // was hidden via the red close button, bring it back when the app becomes
+    // active again. (Linux relaunch is handled by SingleApplication.)
+    QObject::connect(&a, &QGuiApplication::applicationStateChanged, w,
+                     [](Qt::ApplicationState state) {
+        if (state == Qt::ApplicationActive && w && !w->isVisible()) {
+            w->show();
+            w->raise();
+            w->activateWindow();
+        }
+    });
+#endif
 
     w->show();
     if (parser.isSet(forceOption)) {

@@ -40,6 +40,7 @@ class TOGGL_INTERNAL_EXPORT TimeEntry {
     , Color("")
     , GUID("")
     , Billable(false)
+    , ActivityID(0)
     , Tags("")
     , Started(0)
     , Ended(0)
@@ -78,6 +79,7 @@ class TOGGL_INTERNAL_EXPORT TimeEntry {
     std::string Color;
     std::string GUID;
     bool Billable;
+    uint64_t ActivityID;
     std::string Tags;
     int64_t Started;
     int64_t Ended;
@@ -291,6 +293,7 @@ class TOGGL_INTERNAL_EXPORT GUI : public SyncStateMonitor {
     , on_display_time_entry_autocomplete_(nullptr)
     , on_display_project_autocomplete_(nullptr)
     , on_display_workspace_select_(nullptr)
+    , on_display_activities_(nullptr)
     , on_display_client_select_(nullptr)
     , on_display_tags_(nullptr)
     , on_display_time_entry_editor_(nullptr)
@@ -310,6 +313,7 @@ class TOGGL_INTERNAL_EXPORT GUI : public SyncStateMonitor {
     , on_display_help_articles_(nullptr)
     , on_display_project_colors_(nullptr)
     , on_display_countries_(nullptr)
+    , on_display_onboarding_(nullptr)
     , on_continue_sign_in(nullptr)
     , on_display_timeline_ui(nullptr)
     , lastSyncState(-1)
@@ -374,6 +378,10 @@ class TOGGL_INTERNAL_EXPORT GUI : public SyncStateMonitor {
         std::vector<TogglCountryView> *items);
 
     void DisplayWorkspaceSelect(
+        const std::vector<view::Generic> &list);
+
+    // Redmine fork: the global TimeEntryActivity list (editor + Preferences).
+    void DisplayActivities(
         const std::vector<view::Generic> &list);
 
     void DisplayClientSelect(
@@ -506,6 +514,10 @@ class TOGGL_INTERNAL_EXPORT GUI : public SyncStateMonitor {
         on_display_workspace_select_ = cb;
     }
 
+    void OnDisplayActivities(TogglDisplayViewItems cb) {
+        on_display_activities_ = cb;
+    }
+
     void OnDisplayClientSelect(TogglDisplayViewItems cb) {
         on_display_client_select_ = cb;
     }
@@ -560,10 +572,6 @@ class TOGGL_INTERNAL_EXPORT GUI : public SyncStateMonitor {
 
     void OnContinueSignIn(TogglContinueSignIn cb) {
         on_continue_sign_in = cb;
-    }
-
-    void OnDisplayLoginSSO(TogglDisplayLoginSSO cb) {
-        on_display_login_sso = cb;
     }
 
     void OnDisplayTimelineUI(TogglDisplayTimelineUI cb) {
@@ -625,8 +633,6 @@ class TOGGL_INTERNAL_EXPORT GUI : public SyncStateMonitor {
         }
     }
 
-    void DisplayOnLoginSSO(const std::string &ssoURL);
-
     void DisplayTimelineUI(const bool isEnabled);
 
  private:
@@ -645,6 +651,7 @@ class TOGGL_INTERNAL_EXPORT GUI : public SyncStateMonitor {
     TogglDisplayAutocomplete on_display_time_entry_autocomplete_;
     TogglDisplayAutocomplete on_display_project_autocomplete_;
     TogglDisplayViewItems on_display_workspace_select_;
+    TogglDisplayViewItems on_display_activities_;
     TogglDisplayViewItems on_display_client_select_;
     TogglDisplayViewItems on_display_tags_;
     TogglDisplayTimeEntryEditor on_display_time_entry_editor_;
@@ -666,7 +673,6 @@ class TOGGL_INTERNAL_EXPORT GUI : public SyncStateMonitor {
     TogglDisplayCountries on_display_countries_;
     TogglDisplayOnboarding on_display_onboarding_;
     TogglContinueSignIn on_continue_sign_in;
-    TogglDisplayLoginSSO on_display_login_sso;
     TogglDisplayTimelineUI on_display_timeline_ui;
 
     // Cached views

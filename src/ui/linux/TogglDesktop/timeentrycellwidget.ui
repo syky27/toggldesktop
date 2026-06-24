@@ -202,6 +202,9 @@
          <string notr="true"/>
         </property>
         <layout class="QVBoxLayout" name="verticalLayout">
+         <property name="spacing">
+          <number>2</number>
+         </property>
          <property name="sizeConstraint">
           <enum>QLayout::SetMinimumSize</enum>
          </property>
@@ -209,12 +212,25 @@
           <number>0</number>
          </property>
          <item>
-          <widget class="ClickableLabel" name="description">
+          <widget class="ClickableLabel" name="project">
+           <property name="font">
+            <font>
+             <pointsize>11</pointsize>
+             <weight>75</weight>
+             <bold>true</bold>
+            </font>
+           </property>
            <property name="styleSheet">
             <string notr="true"/>
            </property>
            <property name="text">
-            <string>Blogpost about this</string>
+            <string>#123: NEW - TOGGL</string>
+           </property>
+           <property name="textFormat">
+            <enum>Qt::RichText</enum>
+           </property>
+           <property name="openExternalLinks">
+            <bool>false</bool>
            </property>
            <property name="wordWrap">
             <bool>true</bool>
@@ -222,12 +238,17 @@
           </widget>
          </item>
          <item>
-          <widget class="ClickableLabel" name="project">
+          <widget class="ClickableLabel" name="description">
+           <property name="font">
+            <font>
+             <pointsize>9</pointsize>
+            </font>
+           </property>
            <property name="styleSheet">
-            <string notr="true"/>
+            <string notr="true">color:#5a5a5a;</string>
            </property>
            <property name="text">
-            <string>NEW - TOGGL</string>
+            <string>Blogpost about this</string>
            </property>
            <property name="wordWrap">
             <bool>true</bool>
@@ -326,7 +347,7 @@
         </property>
         <property name="maximumSize">
          <size>
-          <width>137</width>
+          <width>160</width>
           <height>77</height>
          </size>
         </property>
@@ -335,7 +356,7 @@
         </property>
         <layout class="QHBoxLayout" name="horizontalLayout_3">
          <property name="spacing">
-          <number>0</number>
+          <number>4</number>
          </property>
          <property name="sizeConstraint">
           <enum>QLayout::SetFixedSize</enum>
@@ -344,7 +365,7 @@
           <number>0</number>
          </property>
          <property name="rightMargin">
-          <number>0</number>
+          <number>6</number>
          </property>
          <item>
           <widget class="QLabel" name="tags">
@@ -400,14 +421,14 @@
           <widget class="QPushButton" name="continueButton">
            <property name="minimumSize">
             <size>
-             <width>32</width>
-             <height>32</height>
+             <width>36</width>
+             <height>36</height>
             </size>
            </property>
            <property name="maximumSize">
             <size>
-             <width>32</width>
-             <height>32</height>
+             <width>36</width>
+             <height>36</height>
             </size>
            </property>
            <property name="focusPolicy">

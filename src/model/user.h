@@ -150,6 +150,13 @@ class TOGGL_INTERNAL_EXPORT User : public BaseModel {
         bool including_related_data,
         bool syncServer);
 
+    // Inject live issue-search results (a Toggl-shaped task array) into the
+    // in-memory model, deduping by id. Not persisted to the DB: a time entry
+    // pushes the issue id directly as issue_id, so an in-memory task is enough
+    // to select and track. alive=nullptr means searched tasks never evict the
+    // assigned-issue set cached at login.
+    void LoadSearchedTasksFromJSON(const Json::Value &tasks);
+
     error LoadWorkspacesFromJSONString(const std::string & json);
 
     error LoadTimeEntriesFromJSONString(const std::string &json);
@@ -212,6 +219,10 @@ class TOGGL_INTERNAL_EXPORT User : public BaseModel {
     void LoadAlphaFeaturesFromJSON(const Json::Value& data);
 
  private:
+    // Redmine fork: split a finished entry that crosses local midnight into one
+    // entry per local day (called from Stop()).
+    void splitAtMidnight(TimeEntry *te, std::vector<TimeEntry *> *stopped);
+
     void loadUserTagFromJSON(
         Json::Value data,
         std::set<Poco::UInt64> *alive = nullptr);

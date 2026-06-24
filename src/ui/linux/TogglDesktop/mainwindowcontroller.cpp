@@ -40,7 +40,6 @@ MainWindowController::MainWindowController(
   loggedIn(false),
   preferencesDialog(new PreferencesDialog(this)),
   aboutDialog(new AboutDialog(this)),
-  feedbackDialog(new FeedbackDialog(this)),
   icon(":/icons/1024x1024/toggldesktop.png"),
   iconDisabled(":/icons/1024x1024/toggldesktop_gray.png"),
   trayIcon(nullptr),
@@ -82,9 +81,6 @@ MainWindowController::MainWindowController(
     connect(TogglApi::instance, SIGNAL(displayPomodoroBreak(QString,QString)),  // NOLINT
             this, SLOT(displayPomodoroBreak(QString,QString)));  // NOLINT
 
-    connect(TogglApi::instance, SIGNAL(displayUpdate(QString)),  // NOLINT
-            this, SLOT(displayUpdate(QString)));  // NOLINT
-
     connect(TogglApi::instance, SIGNAL(displayOnlineState(int64_t)),  // NOLINT
             this, SLOT(displayOnlineState(int64_t)));  // NOLINT
 
@@ -95,11 +91,26 @@ MainWindowController::MainWindowController(
             this, SLOT(updateContinueStopShortcut()));  // NOLINT
 
     setWindowIcon(icon);
+#ifdef Q_OS_MAC
+    // The macOS menubar expects a monochrome template image that adapts to the
+    // light/dark menubar; the colored app icon is used for the Dock/window only.
+    trayIconTemplate = QIcon(":/icons/menubar/redtick-template.png");
+    trayIconTemplate.setIsMask(true);
+    trayIcon = new SystemTray(this, trayIconTemplate);
+#else
     trayIcon = new SystemTray(this, icon);
+#endif
 
     setShortcuts();
     connectMenuActions();
     enableMenuActions();
+
+    // Redmine fork: the web "Reports" link is irrelevant, so repurpose that menu
+    // item to open the day calendar view.
+    calendarView = new CalendarView(this);
+    ui->actionReports->setText("Calendar");
+    // Redmine fork: remove the Toggl Help menu entry (linked to support.toggl.com).
+    ui->actionHelp->setVisible(false);
 
     connect(trayIcon, SIGNAL(activated(QSystemTrayIcon::ActivationReason)),
             this, SLOT(toggleWindow(QSystemTrayIcon::ActivationReason)));
@@ -230,16 +241,21 @@ void MainWindowController::enableMenuActions() {
     ui->actionSync->setEnabled(loggedIn);
     ui->actionLogout->setEnabled(loggedIn);
     ui->actionClear_Cache->setEnabled(loggedIn);
-    ui->actionSend_Feedback->setEnabled(loggedIn);
     ui->actionReports->setEnabled(loggedIn);
     ui->actionEmail->setText(TogglApi::instance->userEmail());
     if (tracking) {
         setWindowIcon(icon);
+#ifndef Q_OS_MAC
         trayIcon->setIcon(icon);
+#endif
     } else {
         setWindowIcon(iconDisabled);
+#ifndef Q_OS_MAC
         trayIcon->setIcon(iconDisabled);
+#endif
     }
+    // On macOS the menubar glyph stays the monochrome template regardless of
+    // running state (the Dock icon + tooltip convey running/stopped instead).
 }
 
 void MainWindowController::showHideHotkeyPressed() {
@@ -417,13 +433,21 @@ void MainWindowController::connectMenuActions() {
     connect(ui->actionSync,  &QAction::triggered, this, &MainWindowController::onActionSync);
     connect(ui->actionLogout,  &QAction::triggered, this, &MainWindowController::onActionLogout);
     connect(ui->actionClear_Cache,  &QAction::triggered, this, &MainWindowController::onActionClear_Cache);
-    connect(ui->actionSend_Feedback,  &QAction::triggered, this, &MainWindowController::onActionSend_Feedback);
     connect(ui->actionReports,  &QAction::triggered, this, &MainWindowController::onActionReports);
     connect(ui->actionShow,  &QAction::triggered, this, &MainWindowController::onActionShow);
     connect(ui->actionPreferences,  &QAction::triggered, this, &MainWindowController::onActionPreferences);
     connect(ui->actionAbout,  &QAction::triggered, this, &MainWindowController::onActionAbout);
     connect(ui->actionQuit,  &QAction::triggered, this, &MainWindowController::onActionQuit);
     connect(ui->actionHelp,  &QAction::triggered, this, &MainWindowController::onActionHelp);
+
+    // Keep the in-window menu bar (so the Redtick menu — Settings, Sync,
+    // Calendar, etc. — stays inside the window, not only in the macOS system
+    // menu bar). On macOS, Cmd+Q is handled application-wide (QEvent::Quit ->
+    // quitApp, in main.cpp) and Cmd+H by the standard macOS app menu; giving
+    // the Quit action a shortcut here on macOS would just duplicate Cmd+Q.
+#ifndef Q_OS_MAC
+    ui->actionQuit->setShortcut(QKeySequence::Quit);   // Ctrl+Q on Linux/Windows
+#endif
 
     QMenu *trayMenu = new QMenu(this);
 for (auto act : ui->menuToggl_Desktop->actions()) {
@@ -454,7 +478,12 @@ void MainWindowController::onActionSync() {
 }
 
 void MainWindowController::onActionReports() {
-    TogglApi::instance->openInBrowser();
+    // Repurposed for the Redmine fork: open the day calendar view.
+    if (calendarView) {
+        calendarView->show();
+        calendarView->raise();
+        calendarView->activateWindow();
+    }
 }
 
 void MainWindowController::onActionPreferences() {
@@ -463,10 +492,6 @@ void MainWindowController::onActionPreferences() {
 
 void MainWindowController::onActionAbout() {
     aboutDialog->show();
-}
-
-void MainWindowController::onActionSend_Feedback() {
-    feedbackDialog->show();
 }
 
 void MainWindowController::onActionLogout() {
@@ -478,6 +503,7 @@ void MainWindowController::onActionQuit() {
 }
 
 void MainWindowController::quitApp() {
+    forceQuit_ = true;
     TogglApi::instance->shutdown = true;
     TogglApi::instance->clear();
     qApp->exit(0);
@@ -501,6 +527,7 @@ void MainWindowController::displayApp(const bool open) {
     if (open) {
         show();
         raise();
+        activateWindow();
     }
 }
 
@@ -545,7 +572,15 @@ void MainWindowController::showEvent(QShowEvent *event) {
 
 void MainWindowController::closeEvent(QCloseEvent *event) {
 
-    // Window manager has requested the app to quit so just quit
+    // A real quit (Cmd+Q / menu Quit) was requested — let the window close so
+    // the app terminates instead of hiding to the tray/menubar.
+    if (forceQuit_) {
+        writeSettings();
+        QMainWindow::closeEvent(event);
+        return;
+    }
+
+    // OS / window manager is shutting down — just quit.
     if (powerManagement->aboutToShutdown()) {
         QMainWindow::closeEvent(event);
         return;
@@ -557,6 +592,15 @@ void MainWindowController::closeEvent(QCloseEvent *event) {
             size().width(),
             size().height()));
 
+#ifdef Q_OS_MAC
+    // macOS: the red close button hides the window; the app stays in the
+    // menubar/Dock and is reopened via Spotlight/Alfred/Raycast/Dock or the
+    // menubar menu. Quitting is Cmd+Q (the Quit menu action).
+    event->ignore();
+    hide();
+    return;
+#else
+    // Linux/Windows: hide to the tray if one is present, else confirm quit.
     if (trayIcon->isVisible()) {
         event->ignore();
         hide();
@@ -565,7 +609,7 @@ void MainWindowController::closeEvent(QCloseEvent *event) {
 
     QMessageBox::StandardButton dialog;
     dialog = QMessageBox::question(this,
-                                   "Quit Toggl Track",
+                                   "Quit Redtick",
                                    "Really quit the app?",
                                    QMessageBox::Ok | QMessageBox::Cancel);
     if (QMessageBox::Ok == dialog) {
@@ -577,21 +621,7 @@ void MainWindowController::closeEvent(QCloseEvent *event) {
     }
 
     QMainWindow::closeEvent(event);
-}
-
-void MainWindowController::displayUpdate(const QString url) {
-    if (aboutDialog->isVisible()
-            || url.isEmpty()) {
-        return;
-    }
-    if (QMessageBox::Yes == QMessageBox(
-        QMessageBox::Question,
-        "Download new version?",
-        "A new version of Toggl Track is available. Continue with download?",
-        QMessageBox::No|QMessageBox::Yes).exec()) {
-        QMetaObject::invokeMethod(DesktopServices::instance(), "openUrl", Q_ARG(QUrl, url));
-        quitApp();
-    }
+#endif
 }
 
 void MainWindowController::restoreLastWindowsFrame() {

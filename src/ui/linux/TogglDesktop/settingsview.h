@@ -47,6 +47,7 @@ class SettingsView : public QObject {
         result->RemindEndTime = QTime::fromString(toQString(view->RemindEnds), "HH:mm");
         result->StopEntryOnShutdownSleep = view->StopEntryOnShutdownSleep;
         result->ForceIgnoreCert = view->ForceIgnoreCert;
+        result->DefaultActivityID = view->DefaultActivityID;
         return result;
     }
 
@@ -81,6 +82,7 @@ class SettingsView : public QObject {
     QTime RemindEndTime;
     bool StopEntryOnShutdownSleep;
     bool ForceIgnoreCert;
+    uint64_t DefaultActivityID;
 };
 
 #endif  // SRC_UI_LINUX_TOGGLDESKTOP_SETTINGSVIEW_H_

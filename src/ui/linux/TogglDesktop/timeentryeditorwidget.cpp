@@ -35,6 +35,8 @@ projectModel(new AutocompleteListModel(this, QVector<AutocompleteView*>(), AC_PR
 
     ui->description->setModel(descriptionModel);
     ui->project->setModel(projectModel);
+    // The project box is the issue/task picker in the editor: enable live search.
+    ui->project->setLiveSearchEnabled(true);
 
     ui->description->installEventFilter(this);
     ui->project->installEventFilter(this);
@@ -69,6 +71,9 @@ projectModel(new AutocompleteListModel(this, QVector<AutocompleteView*>(), AC_PR
 
     connect(TogglApi::instance, SIGNAL(displayWorkspaceSelect(QVector<GenericView*>)),  // NOLINT
             this, SLOT(displayWorkspaceSelect(QVector<GenericView*>)));  // NOLINT
+
+    connect(TogglApi::instance, SIGNAL(displayActivities(QVector<GenericView*>)),  // NOLINT
+            this, SLOT(displayActivities(QVector<GenericView*>)));  // NOLINT
 
     connect(TogglApi::instance, SIGNAL(displayProjectAutocomplete(QVector<AutocompleteView*>)),  // NOLINT
             this, SLOT(displayProjectAutocomplete(QVector<AutocompleteView*>)));  // NOLINT
@@ -172,6 +177,10 @@ void TimeEntryEditorWidget::displayProjectAutocomplete(
     projectAutocompleteUpdate = list;
     projectAutocompleteNeedsUpdate = true;
     if (ui->project->hasFocus()) {
+        // The user is typing an issue/project to search for — refresh the
+        // dropdown in place, keeping the edit text + cursor.
+        ui->project->refreshKeepingEdit(list);
+        projectAutocompleteNeedsUpdate = false;
         return;
     }
     ui->project->clear();
@@ -193,6 +202,41 @@ void TimeEntryEditorWidget::displayWorkspaceSelect(
         ui->newProjectWorkspace->addItem(view->Name, QVariant::fromValue(view));
     }
     workspaceSelectNeedsUpdate = false;
+}
+
+void TimeEntryEditorWidget::displayActivities(
+    QVector<GenericView *> list) {
+    activitySelectUpdate = list;
+    if (ui->activity->hasFocus()) {
+        return;
+    }
+    // Preserve the current selection (by activity id) across a repopulate.
+    uint64_t selectedID = 0;
+    QVariant cur = ui->activity->currentData();
+    if (cur.isValid()) {
+        selectedID = cur.value<uint64_t>();
+    }
+    ui->activity->clear();
+    // Leading "(default)" entry maps to id 0 (use the Preferences default).
+    ui->activity->addItem(tr("(default)"), QVariant::fromValue<uint64_t>(0));
+    int selectedIndex = 0;
+    foreach(GenericView *view, activitySelectUpdate) {
+        ui->activity->addItem(view->Name,
+                              QVariant::fromValue<uint64_t>(view->ID));
+        if (view->ID == selectedID) {
+            selectedIndex = ui->activity->count() - 1;
+        }
+    }
+    ui->activity->setCurrentIndex(selectedIndex);
+}
+
+void TimeEntryEditorWidget::on_activity_activated(int index) {
+    Q_UNUSED(index);
+    QVariant data = ui->activity->currentData();
+    if (!data.isValid() || guid.isEmpty()) {
+        return;
+    }
+    TogglApi::instance->setTimeEntryActivity(guid, data.value<uint64_t>());
 }
 
 void TimeEntryEditorWidget::displayLogin(
@@ -231,7 +275,9 @@ void TimeEntryEditorWidget::displayTimeEntryEditor(
         // Reset adding new project
         ui->newProject->setVisible(false);
         ui->project->setVisible(true);
-        ui->addNewProject->setVisible(true);
+        // Redmine fork: projects/issues come from Redmine and time must link to an
+        // existing issue, so never offer "add new project".
+        ui->addNewProject->setVisible(false);
         ui->newProjectName->setText("");
         ui->publicProject->setChecked(false);
         ui->newProjectWorkspace->setCurrentIndex(-1);
@@ -273,6 +319,19 @@ void TimeEntryEditorWidget::displayTimeEntryEditor(
     }
 
     ui->billable->setChecked(view->Billable);
+
+    // Redmine fork: preselect the entry's activity (id 0 -> "(default)").
+    if (!ui->activity->hasFocus()) {
+        int activityIndex = 0;
+        for (int i = 0; i < ui->activity->count(); i++) {
+            if (ui->activity->itemData(i).value<uint64_t>()
+                    == view->ActivityID) {
+                activityIndex = i;
+                break;
+            }
+        }
+        ui->activity->setCurrentIndex(activityIndex);
+    }
 
     ui->lastUpdate->setVisible(view->UpdatedAt);
     ui->lastUpdate->setText(view->lastUpdate());

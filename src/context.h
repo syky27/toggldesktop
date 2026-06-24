@@ -12,7 +12,6 @@
 
 #include "analytics.h"
 #include "util/custom_error_handler.h"
-#include "feedback.h"
 #include "gui.h"
 #include "help_article.h"
 #include "idle.h"
@@ -120,7 +119,6 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     void FullSync();
     void Sync();
     void TimelineUpdateServerSettings();
-    error SendFeedback(const Feedback &);
 
     // Load model update from JSON string (from WebSocket)
     error LoadUpdateFromJSONString(const std::string &json);
@@ -128,6 +126,10 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     void SetWebSocketClientURL(const std::string &value);
 
     error SetDBPath(const std::string &path);
+
+    // Set the Redmine backend base URL and persist it next to the DB so the
+    // next launch can restore it for auto-login (see SetDBPath).
+    void SetBaseURL(const std::string &base_url);
 
     void SetUpdatePath(const std::string &path) {
         update_path_ = path;
@@ -176,6 +178,9 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     error SetSettingsActiveTab(const uint8_t active_tab);
 
     error SetSettingsColorTheme(const uint8_t color_theme);
+
+    // Redmine fork: default TimeEntryActivity id applied to new entries.
+    error SetSettingsDefaultActivity(const Poco::UInt64 activity_id);
 
     error SetSettingsForceIgnoreCert(const bool_t force_ignore_cert);
 
@@ -316,36 +321,6 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
         const std::string &password,
         const uint64_t country_id);
 
-    error GoogleSignup(
-        const std::string &access_token,
-        const uint64_t country_id);
-
-    error AsyncGoogleSignup(
-        const std::string &access_token,
-        const uint64_t country_id);
-
-    error AppleSignup(
-        const std::string &access_token,
-        const uint64_t country_id,
-        const std::string &full_name);
-
-    error AsyncAppleSignup(
-        const std::string &access_token,
-        const uint64_t country_id,
-        const std::string &full_name);
-
-    error GoogleLogin(const std::string &access_token);
-    error AsyncGoogleLogin(const std::string &access_token);
-
-    error AppleLogin(const std::string &access_token);
-    error AsyncAppleLogin(const std::string &access_token);
-
-    error GetSSOIdentityProvider(const std::string &email);
-    error EnableSSO(const std::string &code, const std::string &api_token);
-    void LoginSSO(const std::string &api_token);
-    void SetNeedEnableSSO(const std::string &code);
-    void ResetEnableSSO();
-
     error Logout();
 
     error SetLoggedInUserFromJSON(
@@ -441,6 +416,11 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
         const std::string &GUID,
         const bool value);
 
+    // Redmine fork: per-entry TimeEntryActivity id.
+    error SetTimeEntryActivity(
+        const std::string &GUID,
+        const Poco::UInt64 activity_id);
+
     error SetTimeEntryDescription(
         const std::string &GUID,
         const std::string &value);
@@ -514,9 +494,6 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
 
     void SetOnline();
 
-    error AsyncOpenReportsInBrowser();
-    error OpenReportsInBrowser();
-
     error ToSAccept();
 
     void SetIdleSeconds(const Poco::UInt64 idle_seconds) {
@@ -524,6 +501,11 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     }
 
     void LoadMore();
+
+    // Live-search Redmine issues by number or subject (across all issues the
+    // API token can see, not just the assigned set cached at login) and surface
+    // the matches in the issue/task autocomplete.
+    void SearchIssues(const std::string &query);
 
     static void SetLogPath(const std::string &path);
 
@@ -639,11 +621,11 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     void onPeriodicUpdateCheck(Poco::Util::TimerTask& task);  // NOLINT
     void onPeriodicInAppMessageCheck(Poco::Util::TimerTask& task);  // NOLINT
     void onTimelineUpdateServerSettings(Poco::Util::TimerTask& task);  // NOLINT
-    void onSendFeedback(Poco::Util::TimerTask& task);  // NOLINT
     void onPeriodicSync(Poco::Util::TimerTask& task);  // NOLINT
     void onTrackSettingsUsage(Poco::Util::TimerTask& task);  // NOLINT
     void onWake(Poco::Util::TimerTask& task);  // NOLINT
     void onLoadMore(Poco::Util::TimerTask& task); // NOLINT
+    void onSearchIssues(Poco::Util::TimerTask& task);  // NOLINT
 
     void onTimeEntryAutocompletes(Poco::Util::TimerTask& task);  // NOLINT
     void onMiniTimerAutocompletes(Poco::Util::TimerTask& task);  // NOLINT
@@ -676,6 +658,9 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     void displayPomodoroBreak();
 
     void updateUI(const UIElements &elements);
+
+    // Redmine fork: push the global TimeEntryActivity list to the UI pickers.
+    void displayActivities();
 
     error displayError(const error &err);
 
@@ -746,21 +731,6 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
         const std::string &password,
         std::string *user_data_json,
         const uint64_t country_id);
-    error signupGoogle(
-        const std::string &access_token,
-        std::string *user_data_json,
-        const uint64_t country_id);
-    error signupApple(
-        const std::string &access_token,
-        std::string *user_data_json,
-        const std::string &full_name,
-        const uint64_t country_id);
-    error signUpWithProvider(
-        const std::string &access_token,
-        std::string *user_data_json,
-        const uint64_t country_id,
-        const std::string &full_name,
-        const std::string &provider);
 
     static error me(const std::string &email,
                     const std::string &password,
@@ -806,8 +776,6 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
 
     custom_error_handler error_handler_;
 
-    Feedback feedback_;
-
     // Tasks are scheduled at:
     Poco::Timestamp next_sync_at_;
     Poco::Timestamp next_push_changes_at_;
@@ -818,6 +786,15 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     // Schedule tasks using a timer:
     Poco::Mutex timer_m_;
     Poco::Util::Timer timer_;
+
+    // Latest live issue-search query: set on the UI thread by SearchIssues,
+    // read on the worker thread by onSearchIssues (latest-wins for fast typing).
+    Poco::Mutex search_query_m_;
+    std::string search_query_;
+
+    // File (next to the DB) holding the persisted Redmine base URL, so the host
+    // survives restarts / auto-login. Set in SetDBPath.
+    std::string base_url_path_;
 
     class GUI ui_;
 
@@ -891,9 +868,6 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     bool checkIfSkipPomodoro(TimeEntry *te);
 
     bool isUsingSyncServer() const;
-
-    bool need_enable_SSO;
-    std::string sso_confirmation_code;
 
     enum SyncState {
         STARTUP,

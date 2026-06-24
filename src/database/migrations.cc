@@ -861,6 +861,15 @@ error Migrations::migrateTimeEntries() {
         return err;
     }
 
+    // Redmine fork: per-entry TimeEntryActivity id.
+    err = db_->Migrate(
+        "time_entries.activity_id",
+        "ALTER TABLE time_entries "
+        "ADD COLUMN activity_id integer not null default 0;");
+    if (err != noError) {
+        return err;
+    }
+
     err = db_->Migrate(
         "time_entries.sync_spec",
 
@@ -1424,6 +1433,15 @@ error Migrations::migrateSettings() {
         "settings.start_autotracker_while_timer_is_running",
         "ALTER TABLE settings "
         "ADD COLUMN start_autotracker_while_timer_is_running INTEGER NOT NULL DEFAULT 0;");
+    if (err != noError) {
+        return err;
+    }
+
+    // Redmine fork: default TimeEntryActivity id applied to new entries.
+    err = db_->Migrate(
+        "settings.default_activity_id",
+        "ALTER TABLE settings "
+        "ADD COLUMN default_activity_id INTEGER NOT NULL DEFAULT 0;");
     if (err != noError) {
         return err;
     }

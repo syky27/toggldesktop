@@ -8,6 +8,7 @@
 #include <QKeyEvent>  // NOLINT
 #include <QMessageBox>  // NOLINT
 #include <QKeyEvent>  // NOLINT
+#include <QFont>  // NOLINT
 
 #include "./autocompletelistmodel.h"
 #include "./autocompleteview.h"
@@ -61,13 +62,14 @@ selectedProjectId(0) {
     connect(ui->deleteTask, &QPushButton::clicked, this, &TimerWidget::clearTask);
 
     ui->description->setModel(descriptionModel);
+    ui->description->setLiveSearchEnabled(true);
     ui->taskFrame->setVisible(false);
     ui->projectFrame->setVisible(false);
 
     ui->billable->setVisible(false);
     ui->tags->setVisible(false);
 
-    descriptionPlaceholder = "What are you doing?";
+    descriptionPlaceholder = "Select Redmine issue by number or text";
     tagsHolder = "";
 
     displayStoppedTimerState();
@@ -216,26 +218,43 @@ void TimerWidget::displayRunningTimerState(
         QString("<p style='color:white;background-color:black;'>Started: " +
                 te->StartTimeString+"</p>"));
 
+    // While a timer is running you can't detach the issue/project from the
+    // entry, so hide the ✗ buttons. Make the issue (task) line stand out:
+    // larger + bold so the Redmine issue number and name are easy to read.
+    // The fonts are set via QFont (not only the stylesheet) so the ellipsis
+    // width math in setEllipsisTextToLabel() stays accurate and the text
+    // doesn't overflow.
+    ui->deleteProject->setVisible(false);
+    ui->deleteTask->setVisible(false);
+
+    QFont taskFont = ui->task->font();
+    taskFont.setPointSize(13);
+    taskFont.setBold(true);
+    ui->task->setFont(taskFont);
+    ui->task->setStyleSheet("color: rgb(230, 230, 230);");
+
+    QFont projectFont = ui->project->font();
+    projectFont.setPointSize(10);
+    projectFont.setBold(true);
+    ui->project->setFont(projectFont);
+    ui->project->setStyleSheet("color: rgb(190, 190, 190);");
+
     if (!te->ProjectLabel.isEmpty()) {
         ui->projectFrame->setVisible(true);
-        ui->deleteProject->setVisible(true);
         projectName = te->ProjectLabel;
         if (!te->ClientLabel.isEmpty())
             projectName += ". " + te->ClientLabel;
         setEllipsisTextToLabel(ui->project, projectName);
     }
     else {
-        ui->deleteProject->setVisible(true);
         ui->projectFrame->setVisible(false);
     }
     if (!te->TaskLabel.isEmpty()) {
         ui->taskFrame->setVisible(true);
-        ui->deleteTask->setVisible(true);
         taskName = te->TaskLabel;
         setEllipsisTextToLabel(ui->task, te->TaskLabel);
     }
     else {
-        ui->deleteTask->setVisible(true);
         ui->taskFrame->setVisible(false);
     }
 
@@ -293,6 +312,16 @@ void TimerWidget::displayStoppedTimerState() {
         ui->projectFrame->setVisible(false);
         ui->taskFrame->setVisible(false);
 
+        // Undo the running-timer font/colour bump so the stopped-state
+        // project/task picker labels render at their normal small size.
+        QFont smallFont = ui->project->font();
+        smallFont.setPointSize(8);
+        smallFont.setBold(false);
+        ui->project->setFont(smallFont);
+        ui->task->setFont(smallFont);
+        ui->project->setStyleSheet("color: rgb(190, 190, 190);");
+        ui->task->setStyleSheet("color: rgb(190, 190, 190);");
+
         ui->billable->setVisible(false);
         ui->tags->setVisible(false);
 
@@ -332,6 +361,20 @@ void TimerWidget::start() {
     }
     */
 
+    // Every Redmine time entry must be linked to an issue. Issues are mapped to
+    // Toggl "tasks", so a selected issue sets selectedTaskId; block start until
+    // the user has picked one.
+    if (selectedTaskId == 0) {
+        QMessageBox(QMessageBox::Information,
+                    "Redmine issue required",
+                    "Pick a Redmine issue before starting the timer — every "
+                    "time entry must be linked to an issue.\n\nType an issue "
+                    "number or keywords in the box and choose it from the list.",
+                    QMessageBox::Ok).exec();
+        ui->description->setFocus();
+        return;
+    }
+
     QString description = ui->description->currentText();
     if (description == descriptionPlaceholder) {
         description = "";
@@ -357,6 +400,10 @@ void TimerWidget::displayMinitimerAutocomplete(
     timeEntryAutocompleteUpdate = list;
     timeEntryAutocompleteNeedsUpdate = true;
     if (ui->description->hasFocus()) {
+        // The user is typing — live-search results arrive here. Refresh the
+        // dropdown in place instead of bailing, keeping the edit text + cursor.
+        ui->description->refreshKeepingEdit(list);
+        timeEntryAutocompleteNeedsUpdate = false;
         return;
     }
     QString currentText = ui->description->currentText();

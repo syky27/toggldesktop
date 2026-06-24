@@ -27,6 +27,7 @@
 #include "model/time_entry.h"
 #include "timeline_uploader.h"
 #include "urls.h"
+#include "redmine_client.h"
 #include "window_change_recorder.h"
 #include "onboarding_service.h"
 
@@ -87,8 +88,6 @@ Context::Context(const std::string &app_name, const std::string &app_version)
 , update_path_("")
 , overlay_visible_(false)
 , last_message_id_("")
-, need_enable_SSO(false)
-, sso_confirmation_code("")
 , sync_state_(STARTUP){
     if (!Poco::URIStreamOpener::defaultOpener().supportsScheme("http")) {
         Poco::Net::HTTPStreamFactory::registerFactory();
@@ -1197,14 +1196,9 @@ error Context::LoadUpdateFromJSONString(const std::string &json) {
 }
 
 void Context::switchWebSocketOn() {
-    logger.debug("switchWebSocketOn");
-
-    Poco::Util::TimerTask::Ptr ptask =
-        new Poco::Util::TimerTaskAdapter<Context>(
-            *this, &Context::onSwitchWebSocketOn);
-
-    Poco::Mutex::ScopedLock lock(timer_m_);
-    timer_.schedule(ptask, Poco::Timestamp());
+    // Redmine fork: a Redmine backend has no websocket push channel, so never
+    // open one (avoids endless failed connect/retry attempts against the host).
+    logger.debug("switchWebSocketOn (disabled for Redmine backend)");
 }
 
 void Context::onSwitchWebSocketOn(Poco::Util::TimerTask&) {  // NOLINT
@@ -1255,18 +1249,10 @@ void Context::onSwitchTimelineOff(Poco::Util::TimerTask&) {  // NOLINT
 }
 
 void Context::switchTimelineOn() {
-    logger.debug("switchTimelineOn");
-
-    Poco::Util::TimerTask::Ptr ptask =
-        new Poco::Util::TimerTaskAdapter<Context>(
-            *this, &Context::onSwitchTimelineOn);
-
-    if (quit_) {
-        return;
-    }
-
-    Poco::Mutex::ScopedLock lock(timer_m_);
-    timer_.schedule(ptask, Poco::Timestamp());
+    // Redmine fork: the activity-timeline upload targets Toggl's /api/v8/timeline
+    // (no Redmine equivalent), so never start the uploader. Local timeline
+    // recording, if the user enables it, is handled separately and unaffected.
+    logger.debug("switchTimelineOn (upload disabled for Redmine backend)");
 }
 
 void Context::onSwitchTimelineOn(Poco::Util::TimerTask&) {  // NOLINT
@@ -1368,19 +1354,9 @@ void Context::onPeriodicUpdateCheck(Poco::Util::TimerTask&) {  // NOLINT
 }
 
 void Context::startPeriodicInAppMessageCheck() {
-    logger.debug("startPeriodicInAppMessageCheck");
-
-    Poco::Util::TimerTask::Ptr ptask =
-        new Poco::Util::TimerTaskAdapter<Context>
-    (*this, &Context::onPeriodicInAppMessageCheck);
-
-    Poco::Int64 micros = kCheckInAppMessageIntervalSeconds *
-                         Poco::Int64(kOneSecondInMicros);
-    Poco::Timestamp next_periodic_check_at = Poco::Timestamp() + micros;
-    Poco::Mutex::ScopedLock lock(timer_m_);
-    timer_.schedule(ptask, next_periodic_check_at);
-
-    logger.debug("Next periodic in-app message check at ", Formatter::Format8601(next_periodic_check_at));
+    // Redmine fork: in-app messages are fetched from Toggl's GitHub repo and are
+    // irrelevant to a Redmine backend, so never schedule the check.
+    logger.debug("startPeriodicInAppMessageCheck (disabled for Redmine fork)");
 }
 
 void Context::onPeriodicInAppMessageCheck(Poco::Util::TimerTask&) {  // NOLINT
@@ -1848,111 +1824,6 @@ void Context::onTimelineUpdateServerSettings(Poco::Util::TimerTask&) {  // NOLIN
     }
 }
 
-error Context::SendFeedback(const Feedback &fb) {
-    if (!user_) {
-        logger.warning("Cannot send feedback, user logged out");
-        return noError;
-    }
-
-    error err = fb.Validate();
-    if (err != noError) {
-        return displayError(err);
-    }
-
-    feedback_ = fb;
-
-    Poco::Util::TimerTask::Ptr ptask =
-        new Poco::Util::TimerTaskAdapter<Context>(
-            *this, &Context::onSendFeedback);
-
-    {
-        Poco::Mutex::ScopedLock lock(timer_m_);
-        timer_.schedule(ptask, Poco::Timestamp());
-    }
-
-    return noError;
-}
-
-void Context::onSendFeedback(Poco::Util::TimerTask&) {  // NOLINT
-    logger.debug("onSendFeedback");
-
-    std::string api_token_value("");
-    std::string api_token_name("");
-
-    {
-        Poco::Mutex::ScopedLock lock(user_m_);
-        if (user_) {
-            api_token_value = user_->APIToken();
-            api_token_name = "api_token";
-        }
-    }
-
-    std::string update_channel("");
-    UpdateChannel(&update_channel);
-
-    Poco::Net::HTMLForm form;
-    Json::Value settings_json;
-
-    form.setEncoding(Poco::Net::HTMLForm::ENCODING_MULTIPART);
-
-    form.set("desktop", "true");
-    form.set("toggl_version", HTTPClient::Config.AppVersion);
-    form.set("details", Formatter::EscapeJSONString(feedback_.Details()));
-    form.set("subject", Formatter::EscapeJSONString(feedback_.Subject()));
-    form.set("date", Formatter::Format8601(time(nullptr)));
-    form.set("update_channel", Formatter::EscapeJSONString(update_channel));
-
-    if (!feedback_.AttachmentPath().empty()) {
-        form.addPart("files",
-                     new Poco::Net::FilePartSource(feedback_.AttachmentPath()));
-    }
-
-    // Add all log files to feedback
-    int count = 0;
-    bool exists = true;
-
-    while (exists) {
-        std::stringstream ss;
-        ss << log_path_ << "." << std::to_string(count);
-        Poco::File file(ss.str());
-        exists = file.exists();
-        if (exists) {
-            form.addPart("files",
-                         new Poco::Net::FilePartSource(ss.str()));
-        }
-        count++;
-    }
-
-    form.addPart("files",
-                 new Poco::Net::FilePartSource(log_path_));
-
-    settings_json = settings_.SaveToJSON();
-    if (user_) {
-        settings_json["record_timeline"] = user_->RecordTimeline();
-    }
-
-    form.addPart("files",
-                 new Poco::Net::StringPartSource(
-                     Json::StyledWriter().write(settings_json),
-                     "application/json",
-                     "settings.json"));
-
-    // Not implemented in v9 as of 12.05.2017
-    HTTPRequest req;
-    req.host = urls::API();
-    req.relative_url ="/api/v8/feedback/web";
-    req.basic_auth_username = api_token_value;
-    req.basic_auth_password = api_token_name;
-    req.form = &form;
-
-    HTTPResponse resp = TogglClient::GetInstance().Post(req);
-    logger.debug("Feedback result: " + resp.err);
-    if (resp.err != noError) {
-        displayError(resp.err);
-        return;
-    }
-}
-
 error Context::SetSettingsRemindTimes(
     const std::string &remind_starts,
     const std::string &remind_ends) {
@@ -2078,6 +1949,25 @@ error Context::SetSettingsActiveTab(const uint8_t active_tab) {
 error Context::SetSettingsColorTheme(const uint8_t color_theme) {
     return applySettingsSaveResultToUI(
         db()->SetSettingsColorTheme(color_theme));
+}
+
+error Context::SetSettingsDefaultActivity(const Poco::UInt64 activity_id) {
+    return applySettingsSaveResultToUI(
+        db()->SetSettingsDefaultActivityID(activity_id));
+}
+
+void Context::displayActivities() {
+    // The global Redmine TimeEntryActivity list, captured at login/sync. Delivered
+    // through the generic-view list (id + name) like the workspace selector.
+    const auto &activities = RedmineClient::Activities();
+    std::vector<view::Generic> views;
+    for (auto it = activities.begin(); it != activities.end(); ++it) {
+        view::Generic view;
+        view.ID = it->first;
+        view.Name = it->second;
+        views.push_back(view);
+    }
+    UI()->DisplayActivities(views);
 }
 
 error Context::SetSettingsForceIgnoreCert(const bool_t force_ignore_cert) {
@@ -2374,6 +2264,30 @@ error Context::SetDBPath(
         }
         db_ = new Database(path);
         OnboardingService::getInstance()->SetDatabase(db());
+
+        // Restore the Redmine base URL persisted beside this DB so auto-login
+        // (which runs shortly after) can reach the backend. Stored per-DB file
+        // so staging/production stay separate. Don't clobber a URL already set
+        // (e.g. the TOGGL_REDMINE_URL env fallback).
+        base_url_path_ = path + ".redmine_url";
+        if (urls::BaseURL().empty()) {
+            try {
+                Poco::FileInputStream fis(base_url_path_);
+                std::string saved;
+                std::getline(fis, saved);
+                while (!saved.empty() && (saved.back() == '\n' ||
+                        saved.back() == '\r' || saved.back() == ' ')) {
+                    saved.pop_back();
+                }
+                if (!saved.empty()) {
+                    urls::SetBaseURL(saved);
+                    logger.debug("restored Redmine base URL from ",
+                                 base_url_path_);
+                }
+            } catch (const Poco::Exception &) {
+                // No persisted URL yet (first run / before first login) - fine.
+            }
+        }
     } catch(const Poco::Exception& exc) {
         return displayError(exc.displayText());
     } catch(const std::exception& ex) {
@@ -2382,6 +2296,21 @@ error Context::SetDBPath(
         return displayError(ex);
     }
     return noError;
+}
+
+void Context::SetBaseURL(const std::string &base_url) {
+    urls::SetBaseURL(base_url);
+    // Persist beside the DB so the next launch auto-restores it (see SetDBPath).
+    if (base_url_path_.empty()) {
+        return;
+    }
+    try {
+        Poco::FileOutputStream fos(base_url_path_);  // defaults to out|trunc
+        fos << urls::BaseURL();  // normalized form (trailing slashes stripped)
+        fos.close();
+    } catch (const Poco::Exception &e) {
+        logger.warning("could not persist Redmine base URL: ", e.displayText());
+    }
 }
 
 void Context::SetEnvironment(const std::string &value) {
@@ -2411,148 +2340,6 @@ void Context::SetEnvironment(const std::string &value) {
 Database *Context::db() const {
     poco_check_ptr(db_);
     return db_;
-}
-
-error Context::GoogleLogin(const std::string &access_token) {
-    return Login(access_token, kGoogleAccessToken);
-}
-
-error Context::AsyncGoogleLogin(const std::string &access_token) {
-    return AsyncLogin(access_token, kGoogleAccessToken);
-}
-
-error Context::AppleLogin(const std::string &access_token) {
-    return Login(access_token, kAppleAccessToken);
-}
-
-error Context::AsyncAppleLogin(const std::string &access_token) {
-    return AsyncLogin(access_token, kAppleAccessToken);
-}
-
-error Context::GetSSOIdentityProvider(const std::string &email) {
-    if (email.empty()) {
-        return displayError("Empty email or API token");
-    }
-
-    try {
-
-        std::stringstream ss;
-        ss << "/api/"
-            << kAPIV9
-            << "/auth/saml2/login";
-
-        Poco::URI::QueryParameters query;
-        query.push_back(std::make_pair("email", email));
-        query.push_back(std::make_pair("client", kDesktopClient));
-
-        HTTPRequest req;
-        req.host = urls::API();
-        req.relative_url = ss.str();
-        req.query = &query;
-
-        HTTPResponse resp = TogglClient::GetInstance().Get(req);
-
-        // Success
-        if (resp.status_code == 200) {
-            Json::Value root;
-            Json::Reader reader;
-            if (!reader.parse(resp.body, root)) {
-                return displayError("Invalid JSON");
-            }
-
-            if (root.isMember("sso_url")) {
-                std::string ssoURL = root["sso_url"].asString();
-
-                // Ask the client to open SSL URL on the browser
-                UI()->DisplayOnLoginSSO(ssoURL);
-            } else {
-                return "Missing sso_url key";
-            }
-        } else {
-            // Return error message from the backend
-            std::string errorMessage = resp.body;
-            if (errorMessage.find(kSSONotConfigure) != std::string::npos) {
-                errorMessage = kBetterSSONotConfigure;
-            }
-            return displayError(errorMessage);
-        }
-
-
-    } catch(const Poco::Exception& exc) {
-        return exc.displayText();
-    } catch(const std::exception& ex) {
-        return ex.what();
-    } catch(const std::string & ex) {
-        return ex;
-    }
-    return noError;
-}
-
-void Context::SetNeedEnableSSO(const std::string &code) {
-    need_enable_SSO = true;
-    sso_confirmation_code = code;
-}
-
-void Context::ResetEnableSSO() {
-    need_enable_SSO = false;
-    sso_confirmation_code = "";
-}
-
-void Context::LoginSSO(const std::string &api_token) {
-    Login(api_token, "api_token");
-}
-
-error Context::EnableSSO(const std::string &code,
-                         const std::string &api_token) {
-    if (code.empty()) {
-        return displayError("Empty confirmation code");
-    }
-
-    try {
-
-        std::stringstream ss;
-        ss << "/api/"
-            << kAPIV9
-            << "/me/enable_sso";
-
-        HTTPRequest req;
-        req.host = urls::API();
-        req.relative_url = ss.str();
-
-        // Must use api_token which obtain from /me endpoint
-        // https://toggl.slack.com/archives/C010JBG1KTK/p1592579211031900?thread_ts=1592548873.021000&cid=C010JBG1KTK
-        req.basic_auth_username = api_token;
-        req.basic_auth_password = "api_token";
-
-        // Body Json
-        Json::Value body;
-        Json::FastWriter w;
-        body["confirmation_code"] = code;
-        req.payload = w.write(body);
-
-        // Make a request
-        HTTPResponse resp = TogglClient::GetInstance().Post(req);
-
-        // Success
-        if (resp.status_code == 200) {
-            return noError;
-        } else {
-            // Return error message from the backend
-            // 401 status but the body is empty
-            // we should return some error
-            if (resp.body.length() == 0) {
-                return "Unauthorized!";
-            }
-            return resp.body;
-        }
-    } catch(const Poco::Exception& exc) {
-        return exc.displayText();
-    } catch(const std::exception& ex) {
-        return ex.what();
-    } catch(const std::string & ex) {
-        return ex;
-    }
-    return noError;
 }
 
 error Context::attemptOfflineLogin(const std::string &email,
@@ -2627,24 +2414,6 @@ error Context::Login(
         error err = me(email, password, &json, 0);
         if (err != noError) {
 
-            // Workaround to Fulfill Apple Review team
-            // If the apple email doesn't exist on Toggl system
-            // Instead of presenting an error, we have to show a different window to select Country and TOS then creating a new account
-            // Same behavior with Mobile app
-            //
-            // Apple considers that Toggl will create account regardless of "Sign In / Sign Up with Apple"
-            // At the moment, Toggl BE doesn't automatically create new Toggl Account with Apple Email by "Sign In with Apple"
-            //
-            // Discussion: https://toggl.slack.com/archives/CSE5U3ZUN/p1586418153111700
-            //
-#if defined(__APPLE__)
-            if ((password.compare(kAppleAccessToken) == 0 || password.compare(kGoogleAccessToken) == 0) // Applied for Google and Apple Sign In
-                    && IsAuthenticationError(err)) {
-                UI()->DisplayOnContinueSignIn();
-                return err;
-            }
-#endif
-
             if (!IsNetworkingError(err)) {
                 return displayError(err);
             }
@@ -2661,25 +2430,6 @@ error Context::Login(
         err = SetLoggedInUserFromJSON(json, isSignup);
         if (err != noError) {
             return displayError(err);
-        }
-
-        // It's for SSO Feature
-        // After user authorization, we have to enable SSO with the user's email before presenting the Main View
-        if (need_enable_SSO) {
-            // At this point, we successfully get /me, so we have the api_token
-            auto api_token = user_->APIToken();
-
-            // Start enable SSO for this token
-            error err = EnableSSO(sso_confirmation_code, api_token);
-
-            // If something wrong, we should logout and display error
-            if (err != noError) {
-                Logout();
-                displayError(err);
-                return err;
-            }
-
-            ResetEnableSSO();
         }
 
         err = pullAllPreferencesData();
@@ -2702,13 +2452,7 @@ error Context::Login(
         }
 
         if ("production" == environment_) {
-            if (password.compare(kGoogleAccessToken) == 0) {
-                analytics_.TrackLoginWithGoogle(db_->AnalyticsClientID());
-            } else if (password.compare(kAppleAccessToken) == 0) {
-                analytics_.TrackLoginWithApple(db_->AnalyticsClientID());
-            } else {
-                analytics_.TrackLoginWithUsernamePassword(db_->AnalyticsClientID());
-            }
+            analytics_.TrackLoginWithUsernamePassword(db_->AnalyticsClientID());
         }
 
         overlay_visible_ = false;
@@ -2744,50 +2488,6 @@ error Context::Signup(
     }
 
     return Login(email, password, true);
-}
-
-error Context::GoogleSignup(
-    const std::string &access_token,
-    const uint64_t country_id) {
-
-    std::string json("");
-    error err = signupGoogle(access_token, &json, country_id);
-    if (err != noError) {
-        return displayError(err);
-    }
-    return Login(access_token, kGoogleAccessToken, true);
-}
-
-error Context::AsyncGoogleSignup(const std::string &access_token,
-                                 const uint64_t country_id) {
-    std::thread backgroundThread([&](std::string access_token, uint64_t country_id) {
-        return this->GoogleSignup(access_token, country_id);
-    }, access_token, country_id);
-    backgroundThread.detach();
-    return noError;
-}
-
-error Context::AppleSignup(
-    const std::string &access_token,
-    const uint64_t country_id,
-    const std::string &full_name) {
-    std::string json("");
-    error err = signupApple(access_token, &json, full_name, country_id);
-    if (err != noError) {
-        return displayError(err);
-    }
-    return Login(access_token, kAppleAccessToken, true);
-}
-
-error Context::AsyncAppleSignup(
-    const std::string &access_token,
-    const uint64_t country_id,
-    const std::string &full_name) {
-    std::thread backgroundThread([&](std::string access_token, uint64_t country_id, std::string full_name) {
-        return this->AppleSignup(access_token, country_id, full_name);
-    }, access_token, country_id, full_name);
-    backgroundThread.detach();
-    return noError;
 }
 
 void Context::setUser(User *value, const bool logged_in) {
@@ -2926,6 +2626,9 @@ error Context::SetLoggedInUserFromJSON(
 
     updateUI(UIElements::Reset());
 
+    // Redmine fork: push the global activity list resolved during me().
+    displayActivities();
+
     err = save(false);
     if (err != noError) {
         return displayError(err);
@@ -3051,6 +2754,12 @@ TimeEntry *Context::Start(
                           started,
                           ended,
                           stop_current_running);
+
+        // Redmine fork: stamp new entries with the user's default activity so
+        // the editor preselects it and the eventual POST uses it.
+        if (te && settings_.default_activity_id > 0 && te->ActivityID() == 0) {
+            te->SetActivityID(settings_.default_activity_id, false);
+        }
     }
 
     error err = save(true);
@@ -3763,6 +3472,43 @@ error Context::SetTimeEntryBillable(
         }
 
         te->SetBillable(value, true);
+    }
+
+    if (te->Dirty()) {
+        te->ClearValidationError();
+        te->SetUIModified();
+    }
+
+    return displayError(save(true));
+}
+
+error Context::SetTimeEntryActivity(
+    const std::string &GUID,
+    const Poco::UInt64 activity_id) {
+    if (GUID.empty()) {
+        return displayError(std::string(__FUNCTION__) + ": Missing GUID");
+    }
+
+    TimeEntry *te = nullptr;
+
+    {
+        Poco::Mutex::ScopedLock lock(user_m_);
+        if (!user_) {
+            logger.warning("Cannot set activity, user logged out");
+            return noError;
+        }
+        te = user_->related.TimeEntryByGUID(GUID);
+
+        if (!te) {
+            logger.warning("Time entry not found: " + GUID);
+            return noError;
+        }
+
+        if (isTimeEntryLocked(te)) {
+            return logAndDisplayUserTriedEditingLockedEntry();
+        }
+
+        te->SetActivityID(activity_id, true);
     }
 
     if (te->Dirty()) {
@@ -4520,67 +4266,6 @@ void Context::SetSleep() {
             window_change_recorder_->SetIsSleeping(true);
         }
     }
-}
-
-error Context::AsyncOpenReportsInBrowser() {
-    std::thread backgroundThread([&]() {
-        return this->OpenReportsInBrowser();
-    });
-    backgroundThread.detach();
-    return noError;
-}
-
-error Context::OpenReportsInBrowser() {
-    // Do not even allow to open reports
-    // else they will linger around in the app
-    // and the user can continue using the unsupported app.
-    if (urls::ImATeapot()) {
-        return displayError(kUnsupportedAppError);
-    }
-
-    std::string apitoken("");
-
-    {
-        Poco::Mutex::ScopedLock lock(user_m_);
-        if (!user_) {
-            return displayError("You must log in to view reports");
-        }
-        apitoken = user_->APIToken();
-    }
-
-    HTTPRequest req;
-    req.host = urls::API();
-    req.relative_url = "/api/v9/desktop_login_tokens";
-    req.payload = "{}";
-    req.basic_auth_username = apitoken;
-    req.basic_auth_password = "api_token";
-
-    HTTPResponse resp = TogglClient::GetInstance().Post(req);
-    if (resp.err != noError) {
-        return displayError(resp.err);
-    }
-    if (resp.body.empty()) {
-        return displayError("Unexpected empty response from API");
-    }
-
-    std::string login_token("");
-    error err = User::LoginToken(resp.body, &login_token);
-    if (err != noError) {
-        return displayError(err);
-    }
-
-    if (login_token.empty()) {
-        return displayError("Could not extract login token from JSON");
-    }
-
-    // Not implemented in v9 as of 12.05.2017
-    std::stringstream ss;
-    ss  << urls::Main() << "/api/v8/desktop_login"
-        << "?login_token=" << login_token
-        << "&goto=reports";
-    UI()->DisplayURL(ss.str());
-
-    return noError;
 }
 
 error Context::offerBetaChannel(bool *did_offer) {
@@ -5349,6 +5034,97 @@ void Context::onLoadMore(Poco::Util::TimerTask&) {
     }
 }
 
+void Context::SearchIssues(const std::string &query) {
+    {
+        Poco::Mutex::ScopedLock lock(user_m_);
+        if (!user_) {
+            return;
+        }
+    }
+    // A numeric query is an issue-id lookup (even a single digit is valid); for
+    // free text require >=2 chars so a stray letter doesn't hit the network.
+    bool allDigits = !query.empty() &&
+        query.find_first_not_of("0123456789") == std::string::npos;
+    if (!allDigits && query.size() < 2) {
+        return;
+    }
+    {
+        Poco::Mutex::ScopedLock lock(search_query_m_);
+        search_query_ = query;
+    }
+    Poco::Util::TimerTask::Ptr task =
+        new Poco::Util::TimerTaskAdapter<Context>(*this,
+                &Context::onSearchIssues);
+    Poco::Mutex::ScopedLock lock(timer_m_);
+    timer_.schedule(task, postpone(0));
+}
+
+void Context::onSearchIssues(Poco::Util::TimerTask&) {  // NOLINT
+    std::string api_token;
+    {
+        Poco::Mutex::ScopedLock lock(user_m_);
+        if (!user_) {
+            return;
+        }
+        api_token = user_->APIToken();
+    }
+    if (api_token.empty()) {
+        return;
+    }
+    std::string query;
+    {
+        Poco::Mutex::ScopedLock lock(search_query_m_);
+        query = search_query_;
+    }
+    if (query.empty()) {
+        return;
+    }
+
+    try {
+        Json::Value tasks(Json::arrayValue);
+        error err = RedmineClient::SearchIssuesJSON(api_token, query, &tasks);
+        if (err != noError) {
+            // Log rather than pop an error banner: this runs on every debounced
+            // keystroke, and the token is already validated from login.
+            logger.warning("issue search failed: ", err);
+            return;
+        }
+        if (tasks.size() == 0) {
+            return;
+        }
+        {
+            Poco::Mutex::ScopedLock lock(user_m_);
+            if (!user_) {
+                return;
+            }
+            user_->LoadSearchedTasksFromJSON(tasks);
+        }
+        // Re-emit the autocomplete lists that surface tasks so the freshly
+        // injected issues appear: the mini-timer dropdown (timer field) and the
+        // project dropdown (time-entry editor).
+        {
+            Poco::Mutex::ScopedLock lock(timer_m_);
+            timer_.schedule(
+                new Poco::Util::TimerTaskAdapter<Context>(
+                    *this, &Context::onMiniTimerAutocompletes),
+                Poco::Timestamp());
+            timer_.schedule(
+                new Poco::Util::TimerTaskAdapter<Context>(
+                    *this, &Context::onProjectAutocompletes),
+                Poco::Timestamp());
+        }
+    }
+    catch (const Poco::Exception& exc) {
+        logger.warning(exc.displayText());
+    }
+    catch (const std::exception& ex) {
+        logger.warning(ex.what());
+    }
+    catch (const std::string & ex) {
+        logger.warning(ex);
+    }
+}
+
 
 
 void Context::SetLogPath(const std::string &path) {
@@ -5408,6 +5184,10 @@ error Context::pullAllUserData() {
         if (err != noError) {
             return err;
         }
+
+        // Redmine fork: me() resolved the global activity list as a side effect;
+        // push it to the UI pickers.
+        displayActivities();
 
         {
             Poco::Mutex::ScopedLock lock(user_m_);
@@ -5938,16 +5718,27 @@ error Context::pushEntries(
             continue;
         }
 
-        Json::Value entryJson = (*it)->SaveToJSON();
+        // Running entries (negative duration) stay local until stopped; Redmine
+        // cannot represent an open timer.
+        if (!(*it)->NeedsDELETE() && (*it)->DurationInSeconds() < 0) {
+            continue;
+        }
+        // Every Redmine time entry must be linked to an issue. Keep issue-less
+        // entries local and retry on a later sync (the UI enforces selection at
+        // creation, so this is a safety net rather than the primary guard).
+        if (!(*it)->NeedsDELETE() && !(*it)->TID()) {
+            (*it)->SetUnsynced();
+            continue;
+        }
+
+        Json::Value entryJson = (*it)->SaveToRedmineJSON();
 
         Json::StyledWriter writer;
         entry_json = writer.write(entryJson);
 
-        // std::cout << entry_json;
-
         HTTPRequest req;
         req.host = urls::API();
-        req.relative_url = (*it)->ModelURL();
+        req.relative_url = (*it)->RedmineModelURL();
         req.payload = entry_json;
         req.basic_auth_username = api_token;
         req.basic_auth_password = "api_token";
@@ -6014,8 +5805,11 @@ error Context::pushEntries(
         if (!reader.parse(resp.body, root)) {
             return error("error parsing time entry POST response");
         }
+        // Redmine wraps the entity: {"time_entry": {...}}.
+        const Json::Value &teRoot =
+            root.isMember("time_entry") ? root["time_entry"] : root;
 
-        auto id = root["id"].asUInt64();
+        auto id = teRoot["id"].asUInt64();
         if (!id) {
             logger.error("Backend is sending invalid data: ignoring update without an ID");
             continue;
@@ -6031,7 +5825,14 @@ error Context::pushEntries(
             return error("Backend has changed the ID of the entry");
         }
 
-        (*it)->LoadFromJSON(root, isUsingSyncServer());
+        // Mark the entry synced WITHOUT re-parsing the Redmine response through
+        // the Toggl-shaped LoadFromJSON (the shapes differ). Clearing
+        // UIModifiedAt makes NeedsPUT() false so it is not pushed again.
+        if (teRoot.isMember("updated_on")) {
+            (*it)->SetUpdatedAtString(teRoot["updated_on"].asString());
+        }
+        (*it)->SetUIModifiedAt(0);
+        (*it)->ClearUnsynced();
     }
 
     if (error_found) {
@@ -6046,39 +5847,20 @@ error Context::me(
     std::string *user_data_json,
     const Poco::Int64 since) {
 
-    if (email.empty()) {
-        return "Empty email or API token";
+    // For the Redmine backend the credential is an API key. It arrives as
+    // `password` on login, or as `email` on the periodic pull (which passes the
+    // stored api_token in `email` with password == "api_token").
+    std::string apiKey = password;
+    if (apiKey.empty() || apiKey == "api_token") {
+        apiKey = email;
     }
-
-    if (password.empty()) {
-        return "Empty password";
+    if (apiKey.empty()) {
+        return "Empty API token";
     }
 
     try {
         poco_check_ptr(user_data_json);
-
-        std::stringstream ss;
-        ss << "/api/"
-           << kAPIV8
-           << "/me"
-           << "?app_name=" << TogglClient::Config.AppName
-           << "&with_related_data=true";
-        if (since) {
-            ss << "&since=" << since;
-        }
-
-        HTTPRequest req;
-        req.host = urls::API();
-        req.relative_url = ss.str();
-        req.basic_auth_username = email;
-        req.basic_auth_password = password;
-
-        HTTPResponse resp = TogglClient::GetInstance().Get(req);
-        if (resp.err != noError) {
-            return resp.err;
-        }
-
-        *user_data_json = resp.body;
+        return RedmineClient::FetchAccountJSON(apiKey, since, user_data_json);
     } catch(const Poco::Exception& exc) {
         return exc.displayText();
     } catch(const std::exception& ex) {
@@ -6154,57 +5936,17 @@ error Context::logAndDisplayUserTriedEditingLockedEntry() {
 }
 
 bool Context::isTimeLockedInWorkspace(time_t t, Workspace* ws) {
-    if (!ws)
-        return false;
-    if (!ws->Business())
-        return false;
-    if (ws->Admin())
-        return false;
-    auto lockedTime = ws->LockedTime();
-    if (lockedTime == 0)
-        return false;
-    return t < lockedTime;
+    // Locked-time enforcement is a Toggl-cloud concept; the Redmine fork
+    // never locks past entries, so editing is always allowed.
+    (void)t;
+    (void)ws;
+    return false;
 }
 
 error Context::pullWorkspaces() {
-    std::string api_token = user_->APIToken();
-
-    if (api_token.empty()) {
-        return error("cannot pull user data without API token");
-    }
-
-    std::string json("");
-
-    try {
-        HTTPRequest req;
-        req.host = urls::API();
-        req.relative_url = "/api/v9/me/workspaces";
-        req.basic_auth_username = api_token;
-        req.basic_auth_password = "api_token";
-
-        HTTPResponse resp = TogglClient::GetInstance().Get(req);
-        if (resp.err != noError) {
-            if (resp.err.find(kForbiddenError) != std::string::npos) {
-                // User has no workspaces
-                return error(kMissingWS); // NOLINT
-            }
-            return resp.err;
-        }
-
-        json = resp.body;
-
-        user_->LoadWorkspacesFromJSONString(json);
-
-    }
-    catch (const Poco::Exception& exc) {
-        return exc.displayText();
-    }
-    catch (const std::exception& ex) {
-        return ex.what();
-    }
-    catch (const std::string & ex) {
-        return ex;
-    }
+    // Redmine fork: the single workspace is synthesized during account-load
+    // (RedmineClient), so there is no /api/v9/me/workspaces to fetch -- the old
+    // call 404s on Redmine and surfaced as "Request is not possible".
     return noError;
 }
 
@@ -6289,6 +6031,10 @@ error Context::pullWorkspacePreferences(
 }
 
 error Context::pullUserPreferences() {
+    // Redmine fork: /api/v9/me/preferences/desktop is Toggl-specific and 404s on
+    // Redmine ("Request is not possible"). We don't use Toggl user preferences.
+    return noError;
+
     std::string api_token = user_->APIToken();
 
     if (api_token.empty()) {
@@ -6542,83 +6288,6 @@ error Context::syncHandleResponse(Json::Value &array, const std::vector<T*> &sou
                 continue;
             }
         }
-    }
-    return noError;
-}
-
-error Context::signupGoogle(
-    const std::string &access_token,
-    std::string *user_data_json,
-    const uint64_t country_id) {
-    return signUpWithProvider(access_token, user_data_json, country_id, "", kGoogleProvider);
-}
-
-error Context::signupApple(
-    const std::string &access_token,
-    std::string *user_data_json,
-    const std::string &full_name,
-    const uint64_t country_id) {
-    return signUpWithProvider(access_token, user_data_json, country_id, full_name, kAppleProvider);
-}
-
-error Context::signUpWithProvider(
-    const std::string &access_token,
-    std::string *user_data_json,
-    const uint64_t country_id,
-    const std::string &full_name,
-    const std::string &provider) {
-    try {
-        poco_check_ptr(user_data_json);
-
-        Json::Value user;
-        user["token"] = access_token;
-        user["created_with"] = Formatter::EscapeJSONString(
-            HTTPClient::Config.UserAgent());
-        user["tos_accepted"] = true;
-        user["country_id"] = Json::UInt64(country_id);
-        user["provider"] = provider;
-        if (!full_name.empty()) {
-            user["full_name"] = full_name;
-        }
-
-        Json::Value ws;
-        ws["initial_pricing_plan"] = 0;
-        user["workspace"] = ws;
-
-        std::stringstream ss;
-        ss << "/api/v9/signup?app_name=" << TogglClient::Config.AppName;
-
-        HTTPRequest req;
-        req.host = urls::API();
-        req.relative_url = ss.str();
-        req.payload = Json::StyledWriter().write(user);
-
-        HTTPResponse resp = TogglClient::GetInstance().Post(req);
-        if (resp.err != noError) {
-            if (kBadRequestError == resp.err) {
-                return resp.body;
-            }
-            return resp.err;
-        }
-
-        *user_data_json = resp.body;
-
-        if ("production" == environment_) {
-            if (provider == kAppleProvider) {
-                analytics_.TrackSignupWithApple(db_->AnalyticsClientID());
-            } else if (provider == kGoogleProvider) {
-                analytics_.TrackSignupWithGoogle(db_->AnalyticsClientID());
-            }
-        }
-    }
-    catch (const Poco::Exception& exc) {
-        return exc.displayText();
-    }
-    catch (const std::exception& ex) {
-        return ex.what();
-    }
-    catch (const std::string& ex) {
-        return ex;
     }
     return noError;
 }

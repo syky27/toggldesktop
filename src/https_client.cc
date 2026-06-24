@@ -76,12 +76,9 @@ void HTTPClient::resetPocoContext() {
 }
 
 void ServerStatus::startStatusCheck() {
-    logger().debug("startStatusCheck fast_retry=", fast_retry_);
-
-    if (checker_.isRunning()) {
-        return;
-    }
-    checker_.start();
+    // Redmine fork: the /api/v9/status health poll is Toggl-specific. Rely on
+    // normal per-request error handling instead of polling a status endpoint.
+    logger().debug("startStatusCheck (disabled for Redmine backend)");
 }
 
 void ServerStatus::stopStatusCheck(const std::string &reason) {
@@ -384,31 +381,16 @@ HTTPResponse HTTPClient::makeHttpRequest(
             cred.authenticate(poco_req);
         }
 
-        // Request gzip unless downloading files
+        // Accept a gzipped response (inflated below only if Content-Encoding says so).
         poco_req.set("Accept-Encoding", "gzip");
 
-        // Set the Switching board header for Sync server requests
-        poco_req.set("X-Toggl-Client", "desktop");
-
         if (!req.form) {
-            std::istringstream requestStream(req.payload);
-
-            Poco::DeflatingInputStream gzipRequest(
-                requestStream,
-                Poco::DeflatingStreamBuf::STREAM_GZIP);
-            Poco::DeflatingStreamBuf *pBuff = gzipRequest.rdbuf();
-
-            Poco::Int64 size =
-                pBuff->pubseekoff(0, std::ios::end, std::ios::in);
-            pBuff->pubseekpos(0, std::ios::in);
-
+            // Send the request body uncompressed. Redmine/Rails does not decode
+            // gzip-encoded request bodies, so gzipping here breaks POST/PUT.
             if (req.method != Poco::Net::HTTPRequest::HTTP_GET) {
-                poco_req.setContentLength(size);
-                poco_req.set("Content-Encoding", "gzip");
-                poco_req.setChunkedTransferEncoding(true);
+                poco_req.setContentLength(req.payload.size());
             }
-
-            session->sendRequest(poco_req) << pBuff << std::flush;
+            session->sendRequest(poco_req) << req.payload << std::flush;
         } else {
             req.form->prepareSubmit(poco_req);
             std::ostream& send = session->sendRequest(poco_req);

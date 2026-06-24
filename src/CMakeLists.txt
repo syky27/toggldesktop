@@ -17,6 +17,10 @@ endif()
 
 add_definitions(-DTOGGL_BUILD_TYPE="${TOGGL_BUILD_TYPE}" -DTOGGLDESKTOP_DLL_BUILD)
 
+# This fork targets a Redmine REST backend, which has no batched sync server.
+# Pin the syncer to the legacy per-entity REST path (see Context::syncerActivityWrapper).
+add_definitions(-DTOGGL_SYNC_FORCE_LEGACY)
+
 set(TOGGLDESKTOPLIBRARY_INCLUDE_DIR
     ${CMAKE_CURRENT_SOURCE_DIR}
     PARENT_SCOPE
@@ -61,7 +65,6 @@ set(LIBRARY_SOURCE_FILES
     analytics.cc
     context.cc
     error.cc
-    feedback.cc
     gui.cc
     help_article.cc
     https_client.cc
@@ -74,6 +77,7 @@ set(LIBRARY_SOURCE_FILES
     toggl_api.cc
     toggl_api_private.cc
     urls.cc
+    redmine_client.cc
     websocket_client.cc
     window_change_recorder.cc
     color_convert.cc
@@ -111,7 +115,7 @@ target_link_libraries(TogglDesktopLibrary
     ${LIBRARY_ADDITIONAL_LIBS}
     ${JSONCPP_LIBRARIES}
     ${LUA_LIBRARIES}
-    PocoCrypto PocoDataSQLite PocoNetSSL
+    Poco::Crypto Poco::DataSQLite Poco::NetSSL
 )
 
 install(TARGETS TogglDesktopLibrary DESTINATION lib)

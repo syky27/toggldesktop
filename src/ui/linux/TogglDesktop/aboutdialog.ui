@@ -42,7 +42,7 @@
       </size>
      </property>
      <property name="text">
-      <string>Toggl Track</string>
+      <string>Redtick</string>
      </property>
      <property name="alignment">
       <set>Qt::AlignCenter</set>
@@ -68,39 +68,6 @@
      <property name="alignment">
       <set>Qt::AlignCenter</set>
      </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QPushButton" name="updateButton">
-     <property name="enabled">
-      <bool>false</bool>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">color:rgb(220, 220, 220);</string>
-     </property>
-     <property name="text">
-      <string>Toggl Track is up to date</string>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QWidget" name="widget" native="true">
-     <layout class="QHBoxLayout" name="horizontalLayout">
-      <item>
-       <widget class="QLabel" name="label">
-        <property name="text">
-         <string>Release channel</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QComboBox" name="releaseChannel">
-        <property name="styleSheet">
-         <string notr="true">color:rgb(220, 220, 220);</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
     </widget>
    </item>
   </layout>

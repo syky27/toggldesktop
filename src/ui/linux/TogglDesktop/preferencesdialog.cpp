@@ -6,6 +6,7 @@
 
 #include "./toggl.h"
 #include "./settingsview.h"
+#include "./genericview.h"
 
 PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent),
 ui(new Ui::PreferencesDialog) {
@@ -16,6 +17,9 @@ ui(new Ui::PreferencesDialog) {
 
     connect(TogglApi::instance, SIGNAL(displayLogin(bool,uint64_t)),  // NOLINT
             this, SLOT(displayLogin(bool,uint64_t)));  // NOLINT
+
+    connect(TogglApi::instance, SIGNAL(displayActivities(QVector<GenericView*>)),  // NOLINT
+            this, SLOT(displayActivities(QVector<GenericView*>)));  // NOLINT
 
     connect(TogglApi::instance, SIGNAL(updateShowHideShortcut()),  // NOLINT
             this, SLOT(updateShowHideShortcut()));  // NOLINT
@@ -129,11 +133,54 @@ void PreferencesDialog::displaySettings(const bool open,
     ui->continueStopButton->setText(cs);
 
     ui->sslCheckbox->setChecked(settings->ForceIgnoreCert);
+
+    // Redmine fork: reflect the persisted default activity in the picker.
+    defaultActivityID = settings->DefaultActivityID;
+    if (!ui->defaultActivity->hasFocus()) {
+        int activityIndex = 0;
+        for (int i = 0; i < ui->defaultActivity->count(); i++) {
+            if (ui->defaultActivity->itemData(i).value<uint64_t>()
+                    == defaultActivityID) {
+                activityIndex = i;
+                break;
+            }
+        }
+        ui->defaultActivity->setCurrentIndex(activityIndex);
+    }
 }
 
 void PreferencesDialog::displayLogin(const bool open,
                                      const uint64_t user_id) {
     ui->recordTimeline->setEnabled(!open && user_id);
+}
+
+void PreferencesDialog::displayActivities(QVector<GenericView *> list) {
+    activitySelectUpdate = list;
+    if (ui->defaultActivity->hasFocus()) {
+        return;
+    }
+    ui->defaultActivity->clear();
+    // id 0 maps to the "(none)" entry: fall back to the resolved default.
+    ui->defaultActivity->addItem(tr("(none)"), QVariant::fromValue<uint64_t>(0));
+    int selectedIndex = 0;
+    foreach(GenericView *view, activitySelectUpdate) {
+        ui->defaultActivity->addItem(view->Name,
+                                     QVariant::fromValue<uint64_t>(view->ID));
+        if (view->ID == defaultActivityID) {
+            selectedIndex = ui->defaultActivity->count() - 1;
+        }
+    }
+    ui->defaultActivity->setCurrentIndex(selectedIndex);
+}
+
+void PreferencesDialog::on_defaultActivity_activated(int index) {
+    Q_UNUSED(index);
+    QVariant data = ui->defaultActivity->currentData();
+    if (!data.isValid()) {
+        return;
+    }
+    defaultActivityID = data.value<uint64_t>();
+    TogglApi::instance->setSettingsDefaultActivity(defaultActivityID);
 }
 
 void PreferencesDialog::onDayCheckboxClicked(bool checked) {
