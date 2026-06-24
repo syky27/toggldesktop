@@ -4,13 +4,11 @@
 #define SRC_UI_LINUX_TOGGLDESKTOP_LOGINWIDGET_H_
 
 #include <QWidget>
-#include <QVector>
 #include <QStackedWidget>
 
 #include <stdint.h>
 
 #include "./timeentryview.h"
-#include "./countryview.h"
 
 namespace Ui {
 class LoginWidget;
@@ -36,17 +34,6 @@ class LoginWidget : public QWidget {
         const bool open,
         const uint64_t user_id);
 
-    bool validateFields(bool signup, bool google = false);
-
-    void on_signup_clicked();
-
-    void setCountries(
-        QVector<CountryView * > list);
-
-    void on_viewchangelabel_linkActivated(const QString &link);
-
-    void on_countryComboBox_currentIndexChanged(int index);
-
     void displayError(
         const QString errmsg,
         const bool user_error);
@@ -54,11 +41,7 @@ class LoginWidget : public QWidget {
  private:
     Ui::LoginWidget *ui;
 
-    bool signupVisible;
-
-    bool countriesLoaded;
-    uint64_t selectedCountryId;
-
+    bool validateFields();
     void enableAllControls(const bool enable);
 };
 

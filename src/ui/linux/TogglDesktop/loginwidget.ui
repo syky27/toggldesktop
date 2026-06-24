@@ -93,8 +93,20 @@
            </property>
           </spacer>
          </item>
-         <item>
+         <item alignment="Qt::AlignHCenter">
           <widget class="QLabel" name="logo">
+           <property name="minimumSize">
+            <size>
+             <width>140</width>
+             <height>140</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>140</width>
+             <height>140</height>
+            </size>
+           </property>
            <property name="styleSheet">
             <string notr="true">padding:12px</string>
            </property>
@@ -103,6 +115,9 @@
            </property>
            <property name="pixmap">
             <pixmap resource="Resources.qrc">:/images/logo.png</pixmap>
+           </property>
+           <property name="scaledContents">
+            <bool>true</bool>
            </property>
            <property name="alignment">
             <set>Qt::AlignCenter</set>
@@ -127,7 +142,7 @@
             <bool>false</bool>
            </property>
            <property name="styleSheet">
-            <string notr="true">background-color: rgb(255, 255, 255);color:rgb(85, 85, 85);</string>
+            <string notr="true">background-color: rgb(255, 255, 255);color:rgb(85, 85, 85);border:none;padding-left:8px;</string>
            </property>
            <property name="placeholderText">
             <string>Your e-mail address</string>
@@ -152,7 +167,7 @@
             <bool>false</bool>
            </property>
            <property name="styleSheet">
-            <string notr="true">background-color: rgb(255, 255, 255);color:rgb(85, 85, 85);</string>
+            <string notr="true">background-color: rgb(255, 255, 255);color:rgb(85, 85, 85);border:none;padding-left:8px;</string>
            </property>
            <property name="text">
             <string/>
@@ -166,251 +181,50 @@
           </widget>
          </item>
          <item>
-          <widget class="QWidget" name="loginWidget" native="true">
+          <widget class="QPushButton" name="login">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
            <property name="minimumSize">
             <size>
              <width>320</width>
-             <height>0</height>
+             <height>35</height>
             </size>
            </property>
-           <layout class="QVBoxLayout" name="loginFram">
-            <property name="spacing">
-             <number>1</number>
-            </property>
-            <property name="leftMargin">
-             <number>0</number>
-            </property>
-            <property name="topMargin">
-             <number>0</number>
-            </property>
-            <property name="rightMargin">
-             <number>0</number>
-            </property>
-            <property name="bottomMargin">
-             <number>0</number>
-            </property>
-            <item>
-             <widget class="QLabel" name="forgotPassword">
-              <property name="font">
-               <font>
-                <pointsize>-1</pointsize>
-               </font>
-              </property>
-              <property name="mouseTracking">
-               <bool>true</bool>
-              </property>
-              <property name="styleSheet">
-               <string notr="true">color:#fff;padding-bottom:24px;</string>
-              </property>
-              <property name="text">
-               <string>&lt;a href=&quot;https://www.toggl.com/forgot-password&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#fff;&quot;&gt;Forgot password?&lt;/span&gt;&lt;/a&gt;</string>
-              </property>
-              <property name="textFormat">
-               <enum>Qt::RichText</enum>
-              </property>
-              <property name="alignment">
-               <set>Qt::AlignHCenter|Qt::AlignTop</set>
-              </property>
-              <property name="openExternalLinks">
-               <bool>true</bool>
-              </property>
-              <property name="textInteractionFlags">
-               <set>Qt::TextBrowserInteraction</set>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="login">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
-              </property>
-              <property name="minimumSize">
-               <size>
-                <width>320</width>
-                <height>35</height>
-               </size>
-              </property>
-              <property name="autoFillBackground">
-               <bool>false</bool>
-              </property>
-              <property name="styleSheet">
-               <string notr="true">background-color: rgb(255, 255, 255);color:rgb(85, 85, 85);</string>
-              </property>
-              <property name="text">
-               <string>Log in</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="oryoucan">
-              <property name="styleSheet">
-               <string notr="true">color:#fff;padding-top:18px</string>
-              </property>
-              <property name="text">
-               <string>or you can</string>
-              </property>
-              <property name="alignment">
-               <set>Qt::AlignCenter</set>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </widget>
-         </item>
-         <item>
-          <widget class="QWidget" name="signupWidget" native="true">
-           <layout class="QVBoxLayout" name="verticalLayout_4">
-            <item>
-             <widget class="QLabel" name="countryLabel">
-              <property name="styleSheet">
-               <string notr="true">color:#fff;padding-top:18px</string>
-              </property>
-              <property name="text">
-               <string>Select country</string>
-              </property>
-              <property name="alignment">
-               <set>Qt::AlignCenter</set>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QComboBox" name="countryComboBox">
-              <property name="minimumSize">
-               <size>
-                <width>320</width>
-                <height>35</height>
-               </size>
-              </property>
-              <property name="styleSheet">
-               <string notr="true">color:#fff;</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QFrame" name="horizontalFrame">
-              <layout class="QHBoxLayout" name="horizontalLayout">
-               <property name="spacing">
-                <number>0</number>
-               </property>
-               <property name="leftMargin">
-                <number>0</number>
-               </property>
-               <property name="topMargin">
-                <number>0</number>
-               </property>
-               <property name="rightMargin">
-                <number>0</number>
-               </property>
-               <property name="bottomMargin">
-                <number>0</number>
-               </property>
-               <item>
-                <spacer name="horizontalSpacer">
-                 <property name="orientation">
-                  <enum>Qt::Horizontal</enum>
-                 </property>
-                 <property name="sizeHint" stdset="0">
-                  <size>
-                   <width>0</width>
-                   <height>20</height>
-                  </size>
-                 </property>
-                </spacer>
-               </item>
-               <item>
-                <widget class="QCheckBox" name="tosCheckBox">
-                 <property name="styleSheet">
-                  <string notr="true">color:#fff;</string>
-                 </property>
-                 <property name="text">
-                  <string/>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QLabel" name="label_3">
-                 <property name="styleSheet">
-                  <string notr="true">color:#fff;</string>
-                 </property>
-                 <property name="text">
-                  <string>&lt;p style=&quot;color:#fff;&quot;&gt;I agree to &lt;a href=&quot;https://toggl.com/legal/terms/&quot; style=&quot; text-decoration: underline; color:#fff;&quot;&gt;terms of service&lt;/a&gt; and &lt;a href=&quot;https://toggl.com/legal/privacy/&quot; style=&quot; text-decoration: underline; color:#fff;&quot;&gt;privacy policy&lt;/a&gt;</string>
-                 </property>
-                 <property name="openExternalLinks">
-                  <bool>true</bool>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <spacer name="horizontalSpacer_2">
-                 <property name="orientation">
-                  <enum>Qt::Horizontal</enum>
-                 </property>
-                 <property name="sizeHint" stdset="0">
-                  <size>
-                   <width>0</width>
-                   <height>20</height>
-                  </size>
-                 </property>
-                </spacer>
-               </item>
-              </layout>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="signup">
-              <property name="sizePolicy">
-               <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-                <horstretch>0</horstretch>
-                <verstretch>0</verstretch>
-               </sizepolicy>
-              </property>
-              <property name="minimumSize">
-               <size>
-                <width>320</width>
-                <height>35</height>
-               </size>
-              </property>
-              <property name="autoFillBackground">
-               <bool>false</bool>
-              </property>
-              <property name="styleSheet">
-               <string notr="true">background-color: rgb(255, 255, 255);color:rgb(85, 85, 85);</string>
-              </property>
-              <property name="text">
-               <string>Sign up</string>
-              </property>
-              <property name="default">
-               <bool>false</bool>
-              </property>
-              <property name="flat">
-               <bool>false</bool>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="viewchangelabel">
-           <property name="font">
-            <font>
-             <pointsize>-1</pointsize>
-            </font>
+           <property name="autoFillBackground">
+            <bool>false</bool>
            </property>
            <property name="styleSheet">
-            <string notr="true"/>
+            <string notr="true">background-color: rgb(255, 255, 255);color:rgb(85, 85, 85);border:none;</string>
            </property>
            <property name="text">
-            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;a href=&quot;#&quot; style=&quot;text-decoration:none;color:#fff&quot;&gt;Sign up for free&lt;/a&gt;&lt;/body&gt;&lt;/html&gt;</string>
+            <string>Log in</string>
            </property>
-           <property name="textFormat">
-            <enum>Qt::RichText</enum>
+          </widget>
+         </item>
+         <item>
+          <widget class="QProgressBar" name="loginProgress">
+           <property name="minimumSize">
+            <size>
+             <width>320</width>
+             <height>18</height>
+            </size>
            </property>
-           <property name="alignment">
-            <set>Qt::AlignCenter</set>
+           <property name="maximumSize">
+            <size>
+             <width>16777215</width>
+             <height>18</height>
+            </size>
+           </property>
+           <property name="styleSheet">
+            <string notr="true">QProgressBar { border: none; background-color: rgb(70, 70, 70); border-radius: 3px; margin-top: 12px; }
+QProgressBar::chunk { background-color: rgb(226, 92, 178); border-radius: 3px; }</string>
+           </property>
+           <property name="textVisible">
+            <bool>false</bool>
            </property>
           </widget>
          </item>
