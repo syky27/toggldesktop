@@ -27,6 +27,7 @@ typedefs:
   include:
     - 'TogglDisplay.*'
     - 'TogglContinueSignIn'
+silence-enum-warning: true
 enums:
   include:
     - 'Toggl.*'

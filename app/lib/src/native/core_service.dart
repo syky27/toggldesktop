@@ -14,6 +14,12 @@ import 'toggl_library.dart';
 ///  * bridge the `toggl_on_*` push-callbacks into broadcast [Stream]s (FP-22);
 ///  * walk the linked-list view structs into [TimeEntry] models (FP-23).
 ///
+/// `toggl_ui_start` (called by [start]) requires the CA-cert path to be set and
+/// EVERY mandatory display callback to be registered (Context::VerifyCallbacks).
+/// We therefore register real handlers for the streams the UI consumes and
+/// no-op handlers for the rest (autocomplete, selects, reminders, …) until those
+/// features are built out.
+///
 /// Threading: callbacks are wired with [ffi.NativeCallable.listener] so the core
 /// may invoke them from its own threads; the Dart handlers then run on this
 /// isolate's event loop. See ADR-0001 for the struct-lifetime caveat and the
@@ -24,8 +30,8 @@ class CoreService {
   final TogglBindings _bindings;
   ffi.Pointer<ffi.Void> _ctx = ffi.nullptr;
 
-  // Retained NativeCallables — must be kept alive for the context's lifetime
-  // and explicitly closed in [dispose].
+  // Retained NativeCallables — kept alive for the context's lifetime, closed in
+  // [dispose].
   final List<ffi.NativeCallable<dynamic>> _callbacks = [];
 
   final _timeEntries = StreamController<List<TimeEntry>>.broadcast();
@@ -35,94 +41,132 @@ class CoreService {
   final _errors = StreamController<CoreError>.broadcast();
   final _onlineState = StreamController<int>.broadcast();
 
-  /// The current time-entry list (latest `on_time_entry_list`).
   Stream<List<TimeEntry>> get timeEntries => _timeEntries.stream;
-
-  /// Whether a "load more" button should be shown.
   Stream<bool> get showLoadMore => _showLoadMore.stream;
-
-  /// The running entry, or null when stopped.
   Stream<TimeEntry?> get timerState => _timerState.stream;
-
-  /// Login transitions (logged-in / logged-out).
   Stream<LoginEvent> get loginState => _loginState.stream;
-
-  /// Errors surfaced by the core.
   Stream<CoreError> get errors => _errors.stream;
-
-  /// Online/offline/backend-down state (see `kOnlineState*` in the header).
   Stream<int> get onlineState => _onlineState.stream;
 
   /// Loads the native library, creates the core context, registers callbacks
-  /// and starts the core. [dbPath] must be a writable file path (FP-25).
+  /// and starts the core.
+  ///
+  /// [dbPath] must be writable (FP-25). [cacertPath] must point at a PEM CA
+  /// bundle (required by StartEvents); bundle one as an asset on mobile, or use
+  /// the system bundle on desktop. [baseUrl] is the Redmine backend.
   static CoreService start({
     required String appName,
     required String appVersion,
     required String dbPath,
+    required String cacertPath,
     String? logPath,
+    String? baseUrl,
+    ffi.DynamicLibrary? library,
   }) {
-    final bindings = TogglBindings(TogglLibrary.open());
+    final bindings = TogglBindings(library ?? TogglLibrary.open());
     final service = CoreService._(bindings);
-    service._init(appName, appVersion, dbPath, logPath);
+    service._init(appName, appVersion, dbPath, cacertPath, logPath, baseUrl);
     return service;
   }
 
-  void _init(String appName, String appVersion, String dbPath, String? logPath) {
-    final namePtr = appName.toNativeUtf8();
-    final versionPtr = appVersion.toNativeUtf8();
-    try {
-      _ctx = _bindings.contextInit(namePtr, versionPtr);
-    } finally {
-      malloc.free(namePtr);
-      malloc.free(versionPtr);
-    }
+  void _init(String appName, String appVersion, String dbPath,
+      String cacertPath, String? logPath, String? baseUrl) {
+    _withUtf8(appName, (n) {
+      _withUtf8(appVersion, (v) {
+        _ctx = _bindings.contextInit(n, v);
+      });
+    });
     if (_ctx == ffi.nullptr) {
       throw StateError('toggl_context_init returned null');
     }
 
     if (logPath != null) {
-      final p = logPath.toNativeUtf8();
-      try {
-        _bindings.setLogPath(p);
-      } finally {
-        malloc.free(p);
-      }
+      _withUtf8(logPath, (p) => _bindings.setLogPath(p));
     }
-
+    _withUtf8(cacertPath, (p) => _bindings.setCacertPath(_ctx, p));
+    if (baseUrl != null && baseUrl.isNotEmpty) {
+      _withUtf8(baseUrl, (p) => _bindings.setBaseUrl(_ctx, p));
+    }
     _withUtf8(dbPath, (p) => _bindings.setDbPath(_ctx, p));
 
     _registerCallbacks();
 
     if (_bindings.uiStart(_ctx) == 0) {
-      throw StateError('toggl_ui_start failed');
+      throw StateError('toggl_ui_start failed (check CA cert + callbacks)');
     }
   }
 
+  void _reg<T extends Function>(String symbol, ffi.NativeCallable<T> cb) {
+    _bindings.onRegister(symbol)(_ctx, cb.nativeFunction.cast());
+    _callbacks.add(cb);
+  }
+
   void _registerCallbacks() {
-    // --- struct-bearing callbacks (see ADR-0001 lifetime caveat) ---
-    final teList = ffi.NativeCallable<DisplayTimeEntryListNative>.listener(
-        _onTimeEntryList);
-    _bindings.onTimeEntryList(_ctx, teList.nativeFunction);
-    _callbacks.add(teList);
+    // --- real handlers (streams the UI consumes) ---
+    _reg<DisplayTimeEntryListNative>(
+        'toggl_on_time_entry_list',
+        ffi.NativeCallable<DisplayTimeEntryListNative>.listener(
+            _onTimeEntryList));
+    _reg<DisplayTimerStateNative>('toggl_on_timer_state',
+        ffi.NativeCallable<DisplayTimerStateNative>.listener(_onTimerState));
+    _reg<DisplayLoginNative>('toggl_on_login',
+        ffi.NativeCallable<DisplayLoginNative>.listener(_onLogin));
+    _reg<DisplayErrorNative>('toggl_on_error',
+        ffi.NativeCallable<DisplayErrorNative>.listener(_onError));
+    _reg<DisplayOnlineStateNative>('toggl_on_online_state',
+        ffi.NativeCallable<DisplayOnlineStateNative>.listener(_onOnlineState));
 
-    final timer =
-        ffi.NativeCallable<DisplayTimerStateNative>.listener(_onTimerState);
-    _bindings.onTimerState(_ctx, timer.nativeFunction);
-    _callbacks.add(timer);
-
-    // --- scalar/string callbacks (fully safe with .listener) ---
-    final login = ffi.NativeCallable<DisplayLoginNative>.listener(_onLogin);
-    _bindings.onLogin(_ctx, login.nativeFunction);
-    _callbacks.add(login);
-
-    final error = ffi.NativeCallable<DisplayErrorNative>.listener(_onError);
-    _bindings.onError(_ctx, error.nativeFunction);
-    _callbacks.add(error);
-
-    final online =
-        ffi.NativeCallable<DisplayOnlineStateNative>.listener(_onOnlineState);
-    _bindings.onOnlineState(_ctx, online.nativeFunction);
-    _callbacks.add(online);
+    // --- mandatory callbacks not yet surfaced in the UI: no-op stubs so
+    //     Context::VerifyCallbacks passes (see findMissingCallbacks). ---
+    _reg<DisplayAppNative>('toggl_on_show_app',
+        ffi.NativeCallable<DisplayAppNative>.listener((int _) {}));
+    _reg<DisplayUrlNative>('toggl_on_url',
+        ffi.NativeCallable<DisplayUrlNative>.listener((ffi.Pointer<Utf8> _) {}));
+    _reg<DisplayString2Native>(
+        'toggl_on_reminder',
+        ffi.NativeCallable<DisplayString2Native>.listener(
+            (ffi.Pointer<Utf8> _, ffi.Pointer<Utf8> _) {}));
+    _reg<DisplayString2Native>(
+        'toggl_on_pomodoro',
+        ffi.NativeCallable<DisplayString2Native>.listener(
+            (ffi.Pointer<Utf8> _, ffi.Pointer<Utf8> _) {}));
+    _reg<DisplayString2Native>(
+        'toggl_on_pomodoro_break',
+        ffi.NativeCallable<DisplayString2Native>.listener(
+            (ffi.Pointer<Utf8> _, ffi.Pointer<Utf8> _) {}));
+    _reg<DisplaySettingsNative>(
+        'toggl_on_settings',
+        ffi.NativeCallable<DisplaySettingsNative>.listener(
+            (int _, ffi.Pointer<ffi.Void> _) {}));
+    _reg<DisplayEditorNative>(
+        'toggl_on_time_entry_editor',
+        ffi.NativeCallable<DisplayEditorNative>.listener(
+            (int _, ffi.Pointer<TogglTimeEntryView> _, ffi.Pointer<Utf8> _) {}));
+    _reg<DisplayIdleNative>(
+        'toggl_on_idle_notification',
+        ffi.NativeCallable<DisplayIdleNative>.listener((
+          ffi.Pointer<Utf8> _,
+          ffi.Pointer<Utf8> _,
+          ffi.Pointer<Utf8> _,
+          int _,
+          ffi.Pointer<Utf8> _,
+          ffi.Pointer<Utf8> _,
+          ffi.Pointer<Utf8> _,
+          ffi.Pointer<Utf8> _,
+        ) {}));
+    for (final symbol in const [
+      'toggl_on_time_entry_autocomplete',
+      'toggl_on_mini_timer_autocomplete',
+      'toggl_on_project_autocomplete',
+      'toggl_on_workspace_select',
+      'toggl_on_client_select',
+      'toggl_on_tags',
+    ]) {
+      _reg<DisplayViewPtrNative>(
+          symbol,
+          ffi.NativeCallable<DisplayViewPtrNative>.listener(
+              (ffi.Pointer<ffi.Void> _) {}));
+    }
   }
 
   // --- callback handlers ---
@@ -187,6 +231,9 @@ class CoreService {
       );
 
   // --- public actions (FP-21) ---
+
+  void setBaseUrl(String url) =>
+      _withUtf8(url, (p) => _bindings.setBaseUrl(_ctx, p));
 
   bool login(String email, String password) {
     return _withUtf8(email, (e) {
