@@ -3,6 +3,7 @@ import 'dart:ffi' as ffi;
 import 'package:ffi/ffi.dart';
 
 import '../models/time_entry.dart';
+import 'rt_bridge.dart';
 import 'toggl_bindings.dart';
 import 'toggl_library.dart';
 
@@ -25,9 +26,10 @@ import 'toggl_library.dart';
 /// isolate's event loop. See ADR-0001 for the struct-lifetime caveat and the
 /// planned C bridge shim that deep-copies struct payloads.
 class CoreService {
-  CoreService._(this._bindings);
+  CoreService._(this._bindings, this._rt);
 
   final TogglBindings _bindings;
+  final RtBridge _rt;
   ffi.Pointer<ffi.Void> _ctx = ffi.nullptr;
 
   // Retained NativeCallables — kept alive for the context's lifetime, closed in
@@ -63,8 +65,8 @@ class CoreService {
     String? baseUrl,
     ffi.DynamicLibrary? library,
   }) {
-    final bindings = TogglBindings(library ?? TogglLibrary.open());
-    final service = CoreService._(bindings);
+    final lib = library ?? TogglLibrary.open();
+    final service = CoreService._(TogglBindings(lib), RtBridge(lib));
     service._init(appName, appVersion, dbPath, cacertPath, logPath, baseUrl);
     return service;
   }
@@ -102,13 +104,20 @@ class CoreService {
   }
 
   void _registerCallbacks() {
-    // --- real handlers (streams the UI consumes) ---
-    _reg<DisplayTimeEntryListNative>(
-        'toggl_on_time_entry_list',
-        ffi.NativeCallable<DisplayTimeEntryListNative>.listener(
-            _onTimeEntryList));
-    _reg<DisplayTimerStateNative>('toggl_on_timer_state',
-        ffi.NativeCallable<DisplayTimerStateNative>.listener(_onTimerState));
+    // --- struct-bearing callbacks routed through the C bridge shim (FP-22b),
+    //     which deep-copies into heap-owned structs that survive the core's
+    //     synchronous callback; we free them after reading. ---
+    final listCb =
+        ffi.NativeCallable<RtTimeEntryListCbNative>.listener(_onRtList);
+    _rt.onTimeEntryList(_ctx, listCb.nativeFunction);
+    _callbacks.add(listCb);
+
+    final timerCb =
+        ffi.NativeCallable<RtTimerStateCbNative>.listener(_onRtTimer);
+    _rt.onTimerState(_ctx, timerCb.nativeFunction);
+    _callbacks.add(timerCb);
+
+    // --- scalar/string callbacks (safe with .listener directly) ---
     _reg<DisplayLoginNative>('toggl_on_login',
         ffi.NativeCallable<DisplayLoginNative>.listener(_onLogin));
     _reg<DisplayErrorNative>('toggl_on_error',
@@ -171,14 +180,31 @@ class CoreService {
 
   // --- callback handlers ---
 
-  void _onTimeEntryList(
-      int open, ffi.Pointer<TogglTimeEntryView> first, int showLoadMore) {
-    _timeEntries.add(_walkList(first));
-    _showLoadMore.add(showLoadMore != 0);
+  void _onRtList(ffi.Pointer<RtTimeEntryList> ptr) {
+    if (ptr == ffi.nullptr) return;
+    try {
+      final list = ptr.ref;
+      final out = <TimeEntry>[];
+      for (var i = 0; i < list.count; i++) {
+        out.add(_toModel(list.items[i]));
+      }
+      _timeEntries.add(out);
+      _showLoadMore.add(list.show_load_more != 0);
+    } finally {
+      _rt.freeList(ptr); // release the heap-owned copy
+    }
   }
 
-  void _onTimerState(ffi.Pointer<TogglTimeEntryView> te) {
-    _timerState.add(te == ffi.nullptr ? null : _toModel(te.ref));
+  void _onRtTimer(ffi.Pointer<RtTimeEntry> ptr) {
+    if (ptr == ffi.nullptr) {
+      _timerState.add(null);
+      return;
+    }
+    try {
+      _timerState.add(_toModel(ptr.ref));
+    } finally {
+      _rt.freeOne(ptr);
+    }
   }
 
   void _onLogin(int open, int userId) {
@@ -194,19 +220,9 @@ class CoreService {
 
   void _onOnlineState(int state) => _onlineState.add(state);
 
-  // --- view-struct marshalling (FP-23) ---
+  // --- view-struct marshalling (FP-23): from the bridge's owned RtTimeEntry ---
 
-  List<TimeEntry> _walkList(ffi.Pointer<TogglTimeEntryView> first) {
-    final out = <TimeEntry>[];
-    var node = first;
-    while (node != ffi.nullptr) {
-      out.add(_toModel(node.ref));
-      node = node.ref.Next;
-    }
-    return out;
-  }
-
-  TimeEntry _toModel(TogglTimeEntryView v) => TimeEntry(
+  TimeEntry _toModel(RtTimeEntry v) => TimeEntry(
         id: v.ID,
         guid: _str(v.GUID),
         description: _str(v.Description),

@@ -7,7 +7,7 @@
 #
 # Produces libTogglDesktopLibrary.so / .dylib / TogglDesktopLibrary.dll.
 cmake_minimum_required(VERSION 3.16)
-project(TogglDesktopCore CXX)
+project(TogglDesktopCore CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -79,10 +79,15 @@ endif()
 
 list(TRANSFORM CORE_SOURCES PREPEND "${CORE_SRC}/")
 
+# FFI bridge shim (FP-22b): deep-copies view structs for thread-safe Dart
+# delivery. Compiled into the same library so rt_* symbols ship alongside toggl_*.
+list(APPEND CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/bridge.c")
+
 add_library(TogglDesktopLibrary SHARED ${CORE_SOURCES})
 
 target_include_directories(TogglDesktopLibrary PRIVATE
     ${CORE_SRC}
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${JSONCPP_INCLUDE_DIRS}
 )
 
