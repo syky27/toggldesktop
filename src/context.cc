@@ -1198,14 +1198,9 @@ error Context::LoadUpdateFromJSONString(const std::string &json) {
 }
 
 void Context::switchWebSocketOn() {
-    logger.debug("switchWebSocketOn");
-
-    Poco::Util::TimerTask::Ptr ptask =
-        new Poco::Util::TimerTaskAdapter<Context>(
-            *this, &Context::onSwitchWebSocketOn);
-
-    Poco::Mutex::ScopedLock lock(timer_m_);
-    timer_.schedule(ptask, Poco::Timestamp());
+    // Redmine fork: a Redmine backend has no websocket push channel, so never
+    // open one (avoids endless failed connect/retry attempts against the host).
+    logger.debug("switchWebSocketOn (disabled for Redmine backend)");
 }
 
 void Context::onSwitchWebSocketOn(Poco::Util::TimerTask&) {  // NOLINT
@@ -1256,18 +1251,10 @@ void Context::onSwitchTimelineOff(Poco::Util::TimerTask&) {  // NOLINT
 }
 
 void Context::switchTimelineOn() {
-    logger.debug("switchTimelineOn");
-
-    Poco::Util::TimerTask::Ptr ptask =
-        new Poco::Util::TimerTaskAdapter<Context>(
-            *this, &Context::onSwitchTimelineOn);
-
-    if (quit_) {
-        return;
-    }
-
-    Poco::Mutex::ScopedLock lock(timer_m_);
-    timer_.schedule(ptask, Poco::Timestamp());
+    // Redmine fork: the activity-timeline upload targets Toggl's /api/v8/timeline
+    // (no Redmine equivalent), so never start the uploader. Local timeline
+    // recording, if the user enables it, is handled separately and unaffected.
+    logger.debug("switchTimelineOn (upload disabled for Redmine backend)");
 }
 
 void Context::onSwitchTimelineOn(Poco::Util::TimerTask&) {  // NOLINT
@@ -1369,19 +1356,9 @@ void Context::onPeriodicUpdateCheck(Poco::Util::TimerTask&) {  // NOLINT
 }
 
 void Context::startPeriodicInAppMessageCheck() {
-    logger.debug("startPeriodicInAppMessageCheck");
-
-    Poco::Util::TimerTask::Ptr ptask =
-        new Poco::Util::TimerTaskAdapter<Context>
-    (*this, &Context::onPeriodicInAppMessageCheck);
-
-    Poco::Int64 micros = kCheckInAppMessageIntervalSeconds *
-                         Poco::Int64(kOneSecondInMicros);
-    Poco::Timestamp next_periodic_check_at = Poco::Timestamp() + micros;
-    Poco::Mutex::ScopedLock lock(timer_m_);
-    timer_.schedule(ptask, next_periodic_check_at);
-
-    logger.debug("Next periodic in-app message check at ", Formatter::Format8601(next_periodic_check_at));
+    // Redmine fork: in-app messages are fetched from Toggl's GitHub repo and are
+    // irrelevant to a Redmine backend, so never schedule the check.
+    logger.debug("startPeriodicInAppMessageCheck (disabled for Redmine fork)");
 }
 
 void Context::onPeriodicInAppMessageCheck(Poco::Util::TimerTask&) {  // NOLINT

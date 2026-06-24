@@ -76,12 +76,9 @@ void HTTPClient::resetPocoContext() {
 }
 
 void ServerStatus::startStatusCheck() {
-    logger().debug("startStatusCheck fast_retry=", fast_retry_);
-
-    if (checker_.isRunning()) {
-        return;
-    }
-    checker_.start();
+    // Redmine fork: the /api/v9/status health poll is Toggl-specific. Rely on
+    // normal per-request error handling instead of polling a status endpoint.
+    logger().debug("startStatusCheck (disabled for Redmine backend)");
 }
 
 void ServerStatus::stopStatusCheck(const std::string &reason) {
