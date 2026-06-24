@@ -57,7 +57,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake pkg-config file fuse libfuse2 patchelf curl \
             qtbase5-dev qtbase5-private-dev libqt5x11extras5-dev libqt5svg5-dev \
-            libpoco-dev libjsoncpp-dev libssl-dev libxss-dev libgl-dev libreadline-dev
+            libpoco-dev libjsoncpp-dev libssl-dev libxss-dev libxmu-dev libx11-dev \
+            libgl-dev libreadline-dev
       - name: Configure (system libs)
         run: |
           cmake -S . -B build-appimage \
