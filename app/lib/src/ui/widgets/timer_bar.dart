@@ -52,7 +52,7 @@ class TimerBar extends ConsumerWidget {
             const SizedBox(width: 12),
             IconButton.filled(
               icon: Icon(isRunning ? Icons.stop : Icons.play_arrow),
-              onPressed: () => isRunning ? core.stop() : core.continueEntry(''),
+              onPressed: () => isRunning ? core.stop() : core.startEntry(),
             ),
           ],
         ),

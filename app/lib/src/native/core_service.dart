@@ -248,6 +248,58 @@ class CoreService {
 
   bool stop() => _bindings.stop(_ctx, 0) != 0;
 
+  /// Starts a new running entry; returns its GUID (empty on failure).
+  String startEntry({String description = '', String tags = ''}) {
+    return _withUtf8(description, (d) {
+      return _withUtf8('', (dur) {
+        return _withUtf8('', (pguid) {
+          return _withUtf8(tags, (t) {
+            final p = _bindings.start(_ctx, d, dur, 0, 0, pguid, t, 0, 0, 0);
+            final s = _str(p);
+            // toggl_start returns a malloc'd string the caller must free.
+            if (p != ffi.nullptr) malloc.free(p);
+            return s;
+          });
+        });
+      });
+    });
+  }
+
+  bool deleteEntry(String guid) =>
+      _withUtf8(guid, (g) => _bindings.deleteTimeEntry(_ctx, g)) != 0;
+
+  /// Opens the core's editor for [guid] (drives the on_time_entry_editor flow).
+  void edit(String guid, {bool editRunning = false, String focusedField = ''}) {
+    _withUtf8(guid, (g) {
+      _withUtf8(focusedField,
+          (f) => _bindings.edit(_ctx, g, editRunning ? 1 : 0, f));
+    });
+  }
+
+  bool setDescription(String guid, String value) => _guidVal(
+      _bindings.setDescription, guid, value);
+  bool setDuration(String guid, String value) =>
+      _guidVal(_bindings.setDuration, guid, value);
+  bool setStart(String guid, String value) =>
+      _guidVal(_bindings.setStart, guid, value);
+  bool setEnd(String guid, String value) =>
+      _guidVal(_bindings.setEnd, guid, value);
+  bool setTags(String guid, String value) =>
+      _guidVal(_bindings.setTags, guid, value);
+
+  bool setBillable(String guid, bool value) => _withUtf8(
+      guid, (g) => _bindings.setBillable(_ctx, g, value ? 1 : 0)) != 0;
+
+  bool _guidVal(
+      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>)
+          fn,
+      String guid,
+      String value) {
+    return _withUtf8(
+            guid, (g) => _withUtf8(value, (v) => fn(_ctx, g, v))) !=
+        0;
+  }
+
   void dispose() {
     if (_ctx != ffi.nullptr) {
       _bindings.contextClear(_ctx);

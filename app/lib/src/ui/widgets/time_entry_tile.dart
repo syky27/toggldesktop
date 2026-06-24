@@ -10,10 +10,12 @@ class TimeEntryTile extends StatelessWidget {
     super.key,
     required this.entry,
     required this.onContinue,
+    this.onTap,
   });
 
   final TimeEntry entry;
   final VoidCallback onContinue;
+  final VoidCallback? onTap;
 
   Color? _dotColor() {
     final hex = entry.color.replaceAll('#', '');
@@ -28,6 +30,7 @@ class TimeEntryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final dot = _dotColor();
     return ListTile(
+      onTap: onTap,
       leading: dot == null
           ? const Icon(Icons.circle_outlined, size: 12)
           : Icon(Icons.circle, size: 12, color: dot),

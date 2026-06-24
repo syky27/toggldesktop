@@ -5,6 +5,7 @@ import '../../models/time_entry.dart';
 import '../../state/providers.dart';
 import '../widgets/time_entry_tile.dart';
 import '../widgets/timer_bar.dart';
+import 'time_entry_editor_screen.dart';
 
 /// The main screen: running-timer bar on top, day-grouped entry list below.
 /// Mirrors the Qt `timeentrylistwidget` + `timeentrycellwidget`. Implements
@@ -65,6 +66,11 @@ class _EntryList extends ConsumerWidget {
           entry: e,
           onContinue: () =>
               ref.read(coreServiceProvider).continueEntry(e.guid),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => TimeEntryEditorScreen(entry: e),
+            ),
+          ),
         );
       },
     );

@@ -172,6 +172,48 @@ typedef _LoginDart = int Function(
 typedef _StopNative = ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int);
 typedef _StopDart = int Function(ffi.Pointer<ffi.Void>, int);
 
+// Editor setters of shape `bool_t f(ctx, guid, value)`.
+typedef _GuidValNative = ffi.Int Function(
+    ffi.Pointer<ffi.Void>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _GuidValDart = int Function(
+    ffi.Pointer<ffi.Void>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
+// `bool_t toggl_set_time_entry_billable(ctx, guid, bool_t)`.
+typedef _GuidBoolNative = ffi.Int Function(
+    ffi.Pointer<ffi.Void>, ffi.Pointer<Utf8>, ffi.Int);
+typedef _GuidBoolDart = int Function(
+    ffi.Pointer<ffi.Void>, ffi.Pointer<Utf8>, int);
+
+// `void toggl_edit(ctx, guid, bool_t edit_running, const char* focused_field)`.
+typedef _EditNative = ffi.Void Function(ffi.Pointer<ffi.Void>,
+    ffi.Pointer<Utf8>, ffi.Int, ffi.Pointer<Utf8>);
+typedef _EditDart = void Function(
+    ffi.Pointer<ffi.Void>, ffi.Pointer<Utf8>, int, ffi.Pointer<Utf8>);
+
+// `char* toggl_start(ctx, desc, duration, task_id, project_id, project_guid, tags, prevent_on_app, started, ended)`.
+typedef _StartNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<ffi.Void>,
+    ffi.Pointer<Utf8>,
+    ffi.Pointer<Utf8>,
+    ffi.Uint64,
+    ffi.Uint64,
+    ffi.Pointer<Utf8>,
+    ffi.Pointer<Utf8>,
+    ffi.Int,
+    ffi.Uint64,
+    ffi.Uint64);
+typedef _StartDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<ffi.Void>,
+    ffi.Pointer<Utf8>,
+    ffi.Pointer<Utf8>,
+    int,
+    int,
+    ffi.Pointer<Utf8>,
+    ffi.Pointer<Utf8>,
+    int,
+    int,
+    int);
+
 /// Generic `toggl_on_*` registrar: `void f(void* ctx, <fnptr> cb)`.
 typedef _OnRegisterNative = ffi.Void Function(
     ffi.Pointer<ffi.Void> ctx, ffi.Pointer<ffi.Void> cb);
@@ -201,7 +243,24 @@ class TogglBindings {
             _lib.lookupFunction<_CtxIntNative, _CtxIntDart>('toggl_logout'),
         continueEntry = _lib.lookupFunction<_CtxStrIntNative, _CtxStrIntDart>(
             'toggl_continue'),
-        stop = _lib.lookupFunction<_StopNative, _StopDart>('toggl_stop');
+        stop = _lib.lookupFunction<_StopNative, _StopDart>('toggl_stop'),
+        deleteTimeEntry =
+            _lib.lookupFunction<_CtxStrIntNative, _CtxStrIntDart>(
+                'toggl_delete_time_entry'),
+        setDescription = _lib.lookupFunction<_GuidValNative, _GuidValDart>(
+            'toggl_set_time_entry_description'),
+        setDuration = _lib.lookupFunction<_GuidValNative, _GuidValDart>(
+            'toggl_set_time_entry_duration'),
+        setStart = _lib.lookupFunction<_GuidValNative, _GuidValDart>(
+            'toggl_set_time_entry_start'),
+        setEnd = _lib.lookupFunction<_GuidValNative, _GuidValDart>(
+            'toggl_set_time_entry_end'),
+        setTags = _lib.lookupFunction<_GuidValNative, _GuidValDart>(
+            'toggl_set_time_entry_tags'),
+        setBillable = _lib.lookupFunction<_GuidBoolNative, _GuidBoolDart>(
+            'toggl_set_time_entry_billable'),
+        edit = _lib.lookupFunction<_EditNative, _EditDart>('toggl_edit'),
+        start = _lib.lookupFunction<_StartNative, _StartDart>('toggl_start');
 
   final ffi.DynamicLibrary _lib;
 
@@ -216,6 +275,15 @@ class TogglBindings {
   final _CtxIntDart logout;
   final _CtxStrIntDart continueEntry;
   final _StopDart stop;
+  final _CtxStrIntDart deleteTimeEntry;
+  final _GuidValDart setDescription;
+  final _GuidValDart setDuration;
+  final _GuidValDart setStart;
+  final _GuidValDart setEnd;
+  final _GuidValDart setTags;
+  final _GuidBoolDart setBillable;
+  final _EditDart edit;
+  final _StartDart start;
 
   /// Looks up a `toggl_on_*` registrar by symbol name (generic fn-ptr ABI).
   OnRegister onRegister(String symbol) =>
