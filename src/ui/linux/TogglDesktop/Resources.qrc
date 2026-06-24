@@ -16,6 +16,8 @@
         <file>icons/256x256/toggldesktop.png</file>
         <file>icons/1024x1024/toggldesktop.png</file>
         <file>icons/1024x1024/toggldesktop_gray.png</file>
+        <file>icons/menubar/redtick-template.png</file>
+        <file>icons/menubar/redtick-template@2x.png</file>
         <file>images/continue_regular.svg</file>
         <file>images/continue_light.svg</file>
         <file>images/group_icon_closed.svg</file>

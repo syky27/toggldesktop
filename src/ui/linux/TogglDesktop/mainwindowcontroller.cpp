@@ -81,9 +81,6 @@ MainWindowController::MainWindowController(
     connect(TogglApi::instance, SIGNAL(displayPomodoroBreak(QString,QString)),  // NOLINT
             this, SLOT(displayPomodoroBreak(QString,QString)));  // NOLINT
 
-    connect(TogglApi::instance, SIGNAL(displayUpdate(QString)),  // NOLINT
-            this, SLOT(displayUpdate(QString)));  // NOLINT
-
     connect(TogglApi::instance, SIGNAL(displayOnlineState(int64_t)),  // NOLINT
             this, SLOT(displayOnlineState(int64_t)));  // NOLINT
 
@@ -94,7 +91,15 @@ MainWindowController::MainWindowController(
             this, SLOT(updateContinueStopShortcut()));  // NOLINT
 
     setWindowIcon(icon);
+#ifdef Q_OS_MAC
+    // The macOS menubar expects a monochrome template image that adapts to the
+    // light/dark menubar; the colored app icon is used for the Dock/window only.
+    trayIconTemplate = QIcon(":/icons/menubar/redtick-template.png");
+    trayIconTemplate.setIsMask(true);
+    trayIcon = new SystemTray(this, trayIconTemplate);
+#else
     trayIcon = new SystemTray(this, icon);
+#endif
 
     setShortcuts();
     connectMenuActions();
@@ -240,11 +245,17 @@ void MainWindowController::enableMenuActions() {
     ui->actionEmail->setText(TogglApi::instance->userEmail());
     if (tracking) {
         setWindowIcon(icon);
+#ifndef Q_OS_MAC
         trayIcon->setIcon(icon);
+#endif
     } else {
         setWindowIcon(iconDisabled);
+#ifndef Q_OS_MAC
         trayIcon->setIcon(iconDisabled);
+#endif
     }
+    // On macOS the menubar glyph stays the monochrome template regardless of
+    // running state (the Dock icon + tooltip convey running/stopped instead).
 }
 
 void MainWindowController::showHideHotkeyPressed() {
@@ -429,6 +440,18 @@ void MainWindowController::connectMenuActions() {
     connect(ui->actionQuit,  &QAction::triggered, this, &MainWindowController::onActionQuit);
     connect(ui->actionHelp,  &QAction::triggered, this, &MainWindowController::onActionHelp);
 
+    // Quit shortcut: Cmd+Q on macOS, Ctrl+Q elsewhere.
+    ui->actionQuit->setShortcut(QKeySequence::Quit);
+#ifdef Q_OS_MAC
+    // Use the native macOS menu bar so Cmd+Q routes to our Quit (real quit, not
+    // hide-to-menubar) and the standard app-menu items — Quit, Hide (Cmd+H),
+    // Hide Others, Show All, About, Preferences — are created and behave right.
+    ui->menuBar->setNativeMenuBar(true);
+    ui->actionQuit->setMenuRole(QAction::QuitRole);
+    ui->actionAbout->setMenuRole(QAction::AboutRole);
+    ui->actionPreferences->setMenuRole(QAction::PreferencesRole);
+#endif
+
     QMenu *trayMenu = new QMenu(this);
 for (auto act : ui->menuToggl_Desktop->actions()) {
         trayMenu->addAction(act);
@@ -483,6 +506,7 @@ void MainWindowController::onActionQuit() {
 }
 
 void MainWindowController::quitApp() {
+    forceQuit_ = true;
     TogglApi::instance->shutdown = true;
     TogglApi::instance->clear();
     qApp->exit(0);
@@ -506,6 +530,7 @@ void MainWindowController::displayApp(const bool open) {
     if (open) {
         show();
         raise();
+        activateWindow();
     }
 }
 
@@ -550,7 +575,15 @@ void MainWindowController::showEvent(QShowEvent *event) {
 
 void MainWindowController::closeEvent(QCloseEvent *event) {
 
-    // Window manager has requested the app to quit so just quit
+    // A real quit (Cmd+Q / menu Quit) was requested — let the window close so
+    // the app terminates instead of hiding to the tray/menubar.
+    if (forceQuit_) {
+        writeSettings();
+        QMainWindow::closeEvent(event);
+        return;
+    }
+
+    // OS / window manager is shutting down — just quit.
     if (powerManagement->aboutToShutdown()) {
         QMainWindow::closeEvent(event);
         return;
@@ -562,6 +595,15 @@ void MainWindowController::closeEvent(QCloseEvent *event) {
             size().width(),
             size().height()));
 
+#ifdef Q_OS_MAC
+    // macOS: the red close button hides the window; the app stays in the
+    // menubar/Dock and is reopened via Spotlight/Alfred/Raycast/Dock or the
+    // menubar menu. Quitting is Cmd+Q (the Quit menu action).
+    event->ignore();
+    hide();
+    return;
+#else
+    // Linux/Windows: hide to the tray if one is present, else confirm quit.
     if (trayIcon->isVisible()) {
         event->ignore();
         hide();
@@ -582,21 +624,7 @@ void MainWindowController::closeEvent(QCloseEvent *event) {
     }
 
     QMainWindow::closeEvent(event);
-}
-
-void MainWindowController::displayUpdate(const QString url) {
-    if (aboutDialog->isVisible()
-            || url.isEmpty()) {
-        return;
-    }
-    if (QMessageBox::Yes == QMessageBox(
-        QMessageBox::Question,
-        "Download new version?",
-        "A new version of Redtick is available. Continue with download?",
-        QMessageBox::No|QMessageBox::Yes).exec()) {
-        QMetaObject::invokeMethod(DesktopServices::instance(), "openUrl", Q_ARG(QUrl, url));
-        quitApp();
-    }
+#endif
 }
 
 void MainWindowController::restoreLastWindowsFrame() {

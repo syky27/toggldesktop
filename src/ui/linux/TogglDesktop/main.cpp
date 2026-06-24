@@ -1,6 +1,7 @@
 // Copyright 2014 Toggl Desktop developers.
 
 #include <QApplication>
+#include <QGuiApplication>
 #include <QCommandLineParser>
 #include <QDebug>
 #include <QMetaType>
@@ -117,6 +118,21 @@ int main(int argc, char *argv[]) try {
                                  parser.value(scriptPathOption));
 
     a.w = w;
+
+#ifdef Q_OS_MAC
+    // On macOS, relaunching via Spotlight/Alfred/Raycast/Dock is a "reopen"
+    // (no second process), which just reactivates the running app. If the window
+    // was hidden via the red close button, bring it back when the app becomes
+    // active again. (Linux relaunch is handled by SingleApplication.)
+    QObject::connect(&a, &QGuiApplication::applicationStateChanged, w,
+                     [](Qt::ApplicationState state) {
+        if (state == Qt::ApplicationActive && w && !w->isVisible()) {
+            w->show();
+            w->raise();
+            w->activateWindow();
+        }
+    });
+#endif
 
     w->show();
     if (parser.isSet(forceOption)) {

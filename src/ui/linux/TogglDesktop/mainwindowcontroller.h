@@ -70,8 +70,6 @@ class MainWindowController : public QMainWindow {
         const QString title,
         const QString informative_text);
 
-    void displayUpdate(const QString url);
-
     void displayOnlineState(int64_t);
     void showHideHotkeyPressed();
     void continueStopHotkeyPressed();
@@ -120,9 +118,14 @@ class MainWindowController : public QMainWindow {
 
     QIcon icon;
     QIcon iconDisabled;
+    QIcon trayIconTemplate;   // monochrome menubar glyph (macOS)
     SystemTray *trayIcon;
 
     bool pomodoro;
+
+    // Set true only when the user really wants to quit (Cmd+Q / menu Quit), so
+    // closeEvent can tell a quit apart from a window-close-to-tray.
+    bool forceQuit_ = false;
 
     QString script;
 
