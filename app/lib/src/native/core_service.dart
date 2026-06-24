@@ -42,6 +42,9 @@ class CoreService {
   final _loginState = StreamController<LoginEvent>.broadcast();
   final _errors = StreamController<CoreError>.broadcast();
   final _onlineState = StreamController<int>.broadcast();
+  final _reminders = StreamController<Notice>.broadcast();
+  final _pomodoro = StreamController<Notice>.broadcast();
+  final _idle = StreamController<IdleNotice>.broadcast();
 
   Stream<List<TimeEntry>> get timeEntries => _timeEntries.stream;
   Stream<bool> get showLoadMore => _showLoadMore.stream;
@@ -49,6 +52,15 @@ class CoreService {
   Stream<LoginEvent> get loginState => _loginState.stream;
   Stream<CoreError> get errors => _errors.stream;
   Stream<int> get onlineState => _onlineState.stream;
+
+  /// Reminder notices (`on_reminder`) — feed to a notification service (FP-54).
+  Stream<Notice> get reminders => _reminders.stream;
+
+  /// Pomodoro / pomodoro-break notices (`on_pomodoro*`).
+  Stream<Notice> get pomodoro => _pomodoro.stream;
+
+  /// Idle-detection notices (`on_idle_notification`, desktop) (FP-52).
+  Stream<IdleNotice> get idle => _idle.stream;
 
   /// Loads the native library, creates the core context, registers callbacks
   /// and starts the core.
@@ -134,15 +146,18 @@ class CoreService {
     _reg<DisplayString2Native>(
         'toggl_on_reminder',
         ffi.NativeCallable<DisplayString2Native>.listener(
-            (ffi.Pointer<Utf8> _, ffi.Pointer<Utf8> _) {}));
+            (ffi.Pointer<Utf8> t, ffi.Pointer<Utf8> b) =>
+                _reminders.add(Notice(_str(t), _str(b)))));
     _reg<DisplayString2Native>(
         'toggl_on_pomodoro',
         ffi.NativeCallable<DisplayString2Native>.listener(
-            (ffi.Pointer<Utf8> _, ffi.Pointer<Utf8> _) {}));
+            (ffi.Pointer<Utf8> t, ffi.Pointer<Utf8> b) =>
+                _pomodoro.add(Notice(_str(t), _str(b)))));
     _reg<DisplayString2Native>(
         'toggl_on_pomodoro_break',
         ffi.NativeCallable<DisplayString2Native>.listener(
-            (ffi.Pointer<Utf8> _, ffi.Pointer<Utf8> _) {}));
+            (ffi.Pointer<Utf8> t, ffi.Pointer<Utf8> b) =>
+                _pomodoro.add(Notice(_str(t), _str(b)))));
     _reg<DisplaySettingsNative>(
         'toggl_on_settings',
         ffi.NativeCallable<DisplaySettingsNative>.listener(
@@ -154,15 +169,22 @@ class CoreService {
     _reg<DisplayIdleNative>(
         'toggl_on_idle_notification',
         ffi.NativeCallable<DisplayIdleNative>.listener((
-          ffi.Pointer<Utf8> _,
-          ffi.Pointer<Utf8> _,
-          ffi.Pointer<Utf8> _,
-          int _,
-          ffi.Pointer<Utf8> _,
-          ffi.Pointer<Utf8> _,
-          ffi.Pointer<Utf8> _,
-          ffi.Pointer<Utf8> _,
-        ) {}));
+          ffi.Pointer<Utf8> guid,
+          ffi.Pointer<Utf8> since,
+          ffi.Pointer<Utf8> duration,
+          int started,
+          ffi.Pointer<Utf8> description,
+          ffi.Pointer<Utf8> project,
+          ffi.Pointer<Utf8> task,
+          ffi.Pointer<Utf8> projectColor,
+        ) =>
+            _idle.add(IdleNotice(
+              guid: _str(guid),
+              since: _str(since),
+              duration: _str(duration),
+              started: started,
+              description: _str(description),
+            ))));
     for (final symbol in const [
       'toggl_on_time_entry_autocomplete',
       'toggl_on_mini_timer_autocomplete',
@@ -331,6 +353,9 @@ class CoreService {
     _loginState.close();
     _errors.close();
     _onlineState.close();
+    _reminders.close();
+    _pomodoro.close();
+    _idle.close();
   }
 
   // --- helpers ---
@@ -360,4 +385,27 @@ class CoreError {
   const CoreError({required this.message, required this.userError});
   final String message;
   final bool userError;
+}
+
+/// A title/body notice (reminder or pomodoro).
+class Notice {
+  const Notice(this.title, this.body);
+  final String title;
+  final String body;
+}
+
+/// An idle-detection notice from the core (desktop).
+class IdleNotice {
+  const IdleNotice({
+    required this.guid,
+    required this.since,
+    required this.duration,
+    required this.started,
+    required this.description,
+  });
+  final String guid;
+  final String since;
+  final String duration;
+  final int started;
+  final String description;
 }

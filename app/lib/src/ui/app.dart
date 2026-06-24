@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../platform/notifications.dart';
 import '../state/providers.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
@@ -23,17 +24,40 @@ class RedtickApp extends ConsumerWidget {
   }
 }
 
+final _notificationPresenterProvider =
+    Provider<NotificationPresenter>((ref) => NotificationPresenter.defaultFor());
+
 class _AuthGate extends ConsumerWidget {
   const _AuthGate();
+
+  void _toast(BuildContext context, String message) {
+    if (message.isEmpty) return;
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(message)));
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Surface core errors as snackbars globally.
     ref.listen(errorsProvider, (_, next) {
       final err = next.asData?.value;
-      if (err != null && err.message.isNotEmpty) {
-        final messenger = ScaffoldMessenger.maybeOf(context);
-        messenger?.showSnackBar(SnackBar(content: Text(err.message)));
+      if (err != null) _toast(context, err.message);
+    });
+
+    // Reminder + pomodoro notices: in-app banner + platform notification (FP-54).
+    final presenter = ref.read(_notificationPresenterProvider);
+    ref.listen(remindersProvider, (_, next) {
+      final n = next.asData?.value;
+      if (n != null) {
+        presenter.show(n.title, n.body);
+        _toast(context, '${n.title} ${n.body}'.trim());
+      }
+    });
+    ref.listen(pomodoroProvider, (_, next) {
+      final n = next.asData?.value;
+      if (n != null) {
+        presenter.show(n.title, n.body);
+        _toast(context, '${n.title} ${n.body}'.trim());
       }
     });
 

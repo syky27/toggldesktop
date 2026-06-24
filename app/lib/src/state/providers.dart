@@ -40,6 +40,21 @@ final onlineStateProvider = StreamProvider<int>(
   (ref) => ref.watch(coreServiceProvider).onlineState,
 );
 
+/// Reminder notices (FP-54).
+final remindersProvider = StreamProvider<Notice>(
+  (ref) => ref.watch(coreServiceProvider).reminders,
+);
+
+/// Pomodoro notices (FP-54).
+final pomodoroProvider = StreamProvider<Notice>(
+  (ref) => ref.watch(coreServiceProvider).pomodoro,
+);
+
+/// Idle-detection notices (FP-52, desktop).
+final idleProvider = StreamProvider<IdleNotice>(
+  (ref) => ref.watch(coreServiceProvider).idle,
+);
+
 /// Convenience: whether the user is currently logged in.
 final isLoggedInProvider = Provider<bool>((ref) {
   final login = ref.watch(loginStateProvider).asData?.value;
