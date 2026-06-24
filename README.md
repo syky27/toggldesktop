@@ -81,6 +81,17 @@ A native Redmine time entry only records **`hours`** and **`spent_on`** (a calen
 
 If you skip the fields entirely, tracking still works — new entries are created with the right hours and date — but exact times are approximated and idempotent editing is degraded. Creating the three fields is a one-time, five-minute step that makes the experience lossless.
 
+## Can I hide these fields in the Redmine web UI?
+
+First, a clarification: these are **time-entry** custom fields, not **issue** custom fields. They **never appear on the issue edit form** — only on Redmine's "Log time" / time-entry edit form. So if you just want the issue screen kept clean, there's nothing to do.
+
+To hide them from the time-entry form itself, your only lever is the field's **"Visible"** setting (all users vs. specific roles). Redmine has **no "expose in the API but hide from the form" switch** — the visibility setting gates the REST API exactly as it gates the UI. And Redtick *reads these values back through the API*, so:
+
+- **Hiding them from other users is fine** — restrict "Visible" to the role(s) your tracking accounts hold, and everyone else stops seeing them with no functional impact.
+- **Do not hide them from the account whose API key Redtick uses.** If that user can't see the fields, the API omits them, and Redtick degrades: it falls back to *synthesizing* start times from `spent_on` + `hours` (losing the exact clock times), and — for non-admins — can fail to resolve the field ids by name and fall back to instance-specific defaults that may be wrong.
+
+In short: you can scope visibility to the tracking users, but you can't make the fields invisible *and* still readable by the same API key. The practical choice is to leave them visible to the tracking accounts and accept a small amount of clutter on the log-time form.
+
 # Configure
 
 0. **One-time:** make sure the three [time-entry custom fields](#redmine-setup-required-custom-fields) exist on your Redmine instance.
