@@ -5936,16 +5936,11 @@ error Context::logAndDisplayUserTriedEditingLockedEntry() {
 }
 
 bool Context::isTimeLockedInWorkspace(time_t t, Workspace* ws) {
-    if (!ws)
-        return false;
-    if (!ws->Business())
-        return false;
-    if (ws->Admin())
-        return false;
-    auto lockedTime = ws->LockedTime();
-    if (lockedTime == 0)
-        return false;
-    return t < lockedTime;
+    // Locked-time enforcement is a Toggl-cloud concept; the Redmine fork
+    // never locks past entries, so editing is always allowed.
+    (void)t;
+    (void)ws;
+    return false;
 }
 
 error Context::pullWorkspaces() {
