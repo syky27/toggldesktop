@@ -104,7 +104,7 @@
       <item>
        <widget class="QFrame" name="taskFrame">
         <property name="sizePolicy">
-         <sizepolicy hsizetype="MinimumExpanding" vsizetype="Fixed">
+         <sizepolicy hsizetype="MinimumExpanding" vsizetype="Minimum">
           <horstretch>0</horstretch>
           <verstretch>0</verstretch>
          </sizepolicy>
@@ -112,7 +112,7 @@
         <property name="minimumSize">
          <size>
           <width>0</width>
-          <height>22</height>
+          <height>34</height>
          </size>
         </property>
         <property name="styleSheet">
@@ -179,7 +179,7 @@
            <property name="minimumSize">
             <size>
              <width>0</width>
-             <height>22</height>
+             <height>34</height>
             </size>
            </property>
            <property name="maximumSize">
