@@ -142,6 +142,19 @@
          </property>
         </widget>
        </item>
+       <item row="3" column="1">
+        <widget class="QLabel" name="defaultActivityLabel">
+         <property name="text">
+          <string>Default activity</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="2">
+        <widget class="QComboBox" name="defaultActivity"/>
+       </item>
        <item row="0" column="0" colspan="3">
         <widget class="QGroupBox" name="shortcutsGroupBox">
          <property name="title">

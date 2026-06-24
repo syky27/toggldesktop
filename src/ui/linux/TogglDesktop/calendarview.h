@@ -10,6 +10,7 @@
 #include <QDate>
 #include <QString>
 #include <QRect>
+#include <QPoint>
 
 #include "./timeentryview.h"
 
@@ -55,6 +56,13 @@ class DayGrid : public QWidget {
     int64_t previewStop_;
     int pressY_;
     bool moved_;
+
+    // Click-to-edit / click-empty-to-create: a press that ends without a drag is
+    // treated as a click. We remember where the press landed and, for blocks,
+    // which entry, so release can open the editor or create a new entry.
+    bool pressed_;
+    QPoint pressPos_;
+    QString pressGuid_;  // empty when the press landed on empty space
 };
 
 // CalendarView is a standalone window: a day header (prev/next/today) above a

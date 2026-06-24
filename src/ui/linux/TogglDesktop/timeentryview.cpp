@@ -22,6 +22,7 @@ TimeEntryView *TimeEntryView::importOne(TogglTimeEntryView *view) {
     result->Color = toQString(view->Color);
     result->GUID = toQString(view->GUID);
     result->Billable = view->Billable;
+    result->ActivityID = view->ActivityID;
     result->Tags = toQString(view->Tags);
     result->Started = view->Started;
     result->Ended = view->Ended;

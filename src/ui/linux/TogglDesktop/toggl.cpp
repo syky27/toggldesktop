@@ -132,6 +132,12 @@ void on_display_workspace_select(
         GenericView::importAll(first));
 }
 
+void on_display_activities(
+    TogglGenericView *first) {
+    TogglApi::instance->displayActivities(
+        GenericView::importAll(first));
+}
+
 void on_display_client_select(
     TogglGenericView *first) {
     TogglApi::instance->displayClientSelect(
@@ -290,6 +296,7 @@ TogglApi::TogglApi(
     toggl_on_mini_timer_autocomplete(ctx, on_display_mini_timer_autocomplete);
     toggl_on_project_autocomplete(ctx, on_display_project_autocomplete);
     toggl_on_workspace_select(ctx, on_display_workspace_select);
+    toggl_on_activities(ctx, on_display_activities);
     toggl_on_client_select(ctx, on_display_client_select);
     toggl_on_tags(ctx, on_display_tags);
     toggl_on_time_entry_editor(ctx, on_display_time_entry_editor);
@@ -707,6 +714,29 @@ bool TogglApi::setTimeEntryBillable(
     return toggl_set_time_entry_billable(ctx,
                                          toCStr(guid),
                                          billable);
+}
+
+bool TogglApi::setTimeEntryActivity(
+    const QString guid,
+    const uint64_t activity_id) {
+    return toggl_set_time_entry_activity(ctx,
+                                         toCStr(guid),
+                                         activity_id);
+}
+
+bool TogglApi::setSettingsDefaultActivity(const uint64_t activity_id) {
+    return toggl_set_settings_default_activity(ctx, activity_id);
+}
+
+QString TogglApi::createEmptyTimeEntry(const int64_t started,
+                                       const int64_t ended) {
+    char_t *guid = toggl_create_empty_time_entry(ctx, started, ended);
+    QString res("");
+    if (guid) {
+        res = toQString(guid);
+        free(guid);
+    }
+    return res;
 }
 
 QString TogglApi::addProject(

@@ -6,11 +6,14 @@
 #include <QDialog>
 #include <QKeyEvent>
 #include <QCheckBox>
+#include <QVector>
 #include "./settingsview.h"
 
 namespace Ui {
 class PreferencesDialog;
 }
+
+class GenericView;
 
 class PreferencesDialog : public QDialog {
     Q_OBJECT
@@ -25,6 +28,10 @@ class PreferencesDialog : public QDialog {
     QString keySequence;
     uint8_t beginningOfWeek { 0 };
 
+    // Redmine fork: the global TimeEntryActivity list and the last applied default.
+    QVector<GenericView *> activitySelectUpdate;
+    uint64_t defaultActivityID { 0 };
+
     QCheckBox *checkBoxForDay(uint8_t day);
     void setBeginningOfWeek(uint8_t day);
 
@@ -37,6 +44,9 @@ class PreferencesDialog : public QDialog {
 
     void displayLogin(const bool open,
                       const uint64_t user_id);
+
+    void displayActivities(QVector<GenericView *> list);
+    void on_defaultActivity_activated(int index);
 
     void onDayCheckboxClicked(bool checked);
 

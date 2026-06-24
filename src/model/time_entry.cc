@@ -218,6 +218,7 @@ TimeEntry::TimeEntry(const TimeEntry &o)
     , Billable { o.Billable }
     , DurOnly { o.DurOnly }
     , SkipPomodoro { o.SkipPomodoro }
+    , ActivityID { o.ActivityID }
 {
 
 }
@@ -235,6 +236,11 @@ void TimeEntry::SetCreatedWith(const std::string &value) {
 
 void TimeEntry::SetBillable(bool value, bool userModified) {
     if (Billable.Set(value, userModified))
+        SetDirty();
+}
+
+void TimeEntry::SetActivityID(Poco::UInt64 value, bool userModified) {
+    if (ActivityID.Set(value, userModified))
         SetDirty();
 }
 
@@ -495,6 +501,7 @@ void TimeEntry::LoadFromJSON(const Json::Value &data, bool syncServer) {
         if (!updateMergeableProperty("tid", TID))
             SetTID(0, false);
     updateMergeableProperty("billable", Billable);
+    updateMergeableProperty("activity_id", ActivityID);
     updateMergeableProperty("duration", DurationInSeconds);
     updateMergeablePropertyConvert("start", StartTime, convertTimeString);
     updateMergeablePropertyConvert("stop", StopTime, convertTimeString);
@@ -617,7 +624,9 @@ Json::Value TimeEntry::SaveToRedmineJSON() const {
     te["spent_on"] = Poco::DateTimeFormatter::format(localStart, "%Y-%m-%d");
 
     te["comments"] = Description();
-    te["activity_id"] = RedmineClient::kDefaultActivityID;
+    te["activity_id"] = Json::UInt64(
+        ActivityID() > 0 ? ActivityID()
+                         : static_cast<Poco::UInt64>(RedmineClient::kDefaultActivityID));
 
     // Preserve exact start/stop clock times and the GUID (for idempotent
     // matching) in the configured Redmine time-entry custom fields.

@@ -4,6 +4,8 @@
 #define SRC_REDMINE_CLIENT_H_
 
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "Poco/Types.h"
 
@@ -38,6 +40,10 @@ class RedmineClient {
     // Default Redmine TimeEntryActivity id used when the user has not chosen one.
     static int kDefaultActivityID;
 
+    // The instance's global TimeEntryActivity list as {id, name} pairs, captured
+    // by ResolveSchema() at login. Shown in the editor + Preferences pickers.
+    static const std::vector<std::pair<Poco::UInt64, std::string>> &Activities();
+
     // Build the Toggl-shaped account JSON document. `apiKey` authenticates as
     // the Redmine API key. `since` (unix seconds, 0 = full) bounds how far back
     // time entries are pulled.
@@ -64,6 +70,9 @@ class RedmineClient {
     // /custom_fields.json) still learn the ids from their own entries.
     static void ResolveSchema(const std::string &apiKey,
                               const Json::Value &timeEntries);
+
+    // Global TimeEntryActivity list, filled by ResolveSchema().
+    static std::vector<std::pair<Poco::UInt64, std::string>> activities_;
 };
 
 }  // namespace toggl

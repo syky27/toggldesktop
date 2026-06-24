@@ -42,6 +42,7 @@ Json::Value Settings::SaveToJSON(int) const {
     json["active_tab"] = active_tab;
     json["color_theme"] = color_theme;
     json["force_ignore_cert"] = force_ignore_cert;
+    json["default_activity_id"] = Json::UInt64(default_activity_id);
     return json;
 }
 
@@ -81,7 +82,8 @@ std::string Settings::String() const {
        << " start_autotracker_while_timer_is_running=" << start_autotracker_while_timer_is_running
        << " active_tab=" << active_tab
        << " color_theme=" << color_theme
-       << " force_ignore_cert=" << force_ignore_cert;
+       << " force_ignore_cert=" << force_ignore_cert
+       << " default_activity_id=" << default_activity_id;
 
     return ss.str();
 }
@@ -120,7 +122,8 @@ bool Settings::IsSame(const Settings &other) const {
             && (start_autotracker_while_timer_is_running == other.start_autotracker_while_timer_is_running)
             && (active_tab == other.active_tab)
             && (color_theme == other.color_theme)
-            && (force_ignore_cert == other.force_ignore_cert));
+            && (force_ignore_cert == other.force_ignore_cert)
+            && (default_activity_id == other.default_activity_id));
 }
 
 std::string Settings::ModelName() const {

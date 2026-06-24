@@ -424,7 +424,8 @@ error Database::LoadSettings(Settings *settings) {
                   "open_editor_on_shortcut, has_seen_beta_offering, "
                   "pomodoro, pomodoro_minutes, "
                   "pomodoro_break, pomodoro_break_minutes, stop_entry_on_shutdown_sleep, show_touch_bar, active_tab, color_theme, "
-                  "force_ignore_cert, start_autotracker_without_suggestions, start_autotracker_while_timer_is_running "
+                  "force_ignore_cert, start_autotracker_without_suggestions, start_autotracker_while_timer_is_running, "
+                  "default_activity_id "
                   "from settings "
                   "limit 1",
                   into(settings->use_idle_detection),
@@ -461,6 +462,7 @@ error Database::LoadSettings(Settings *settings) {
                   into(settings->force_ignore_cert),
                   into(settings->start_autotracker_without_suggestions),
                   into(settings->start_autotracker_while_timer_is_running),
+                  into(settings->default_activity_id),
                   limit(1),
                   now;
     } catch(const Poco::Exception& exc) {
@@ -874,6 +876,15 @@ error Database::SetSettingsColorTheme(const uint8_t &color_theme) {
 
 error Database::SetSettingsForceIgnoreCert(const bool &force_ignore_cert) {
     return setSettingsValue("force_ignore_cert", force_ignore_cert);
+}
+
+error Database::SetSettingsDefaultActivityID(
+    const Poco::UInt64 default_activity_id) {
+    return setSettingsValue("default_activity_id", default_activity_id);
+}
+
+error Database::GetSettingsDefaultActivityID(Poco::UInt64 *result) {
+    return getSettingsValue("default_activity_id", result);
 }
 
 template<typename T>
@@ -1756,7 +1767,8 @@ error Database::loadTimeEntries(
                "tid, billable, duronly, ui_modified_at, start, stop, "
                "duration, tags, created_with, deleted_at, updated_at, "
                "project_guid, validation_error, "
-               "previous_pid, previous_project_guid, previous_tid, previous_billable, previous_start, previous_stop, previous_duration, previous_description, previous_created_with, previous_tags "
+               "previous_pid, previous_project_guid, previous_tid, previous_billable, previous_start, previous_stop, previous_duration, previous_description, previous_created_with, previous_tags, "
+               "activity_id "
                "FROM time_entries "
                "WHERE uid = :uid "
                "ORDER BY start DESC",
@@ -1927,6 +1939,13 @@ error Database::loadTimeEntriesFromSQLStatement(
                     model->TagNames.SetPrevious(TimeEntry::TagsStringToVector(rs[29].convert<std::string>()));
                 }
 
+                // Redmine fork: per-entry activity id (current-only column).
+                if (rs[30].isEmpty()) {
+                    model->ActivityID.SetCurrent(0);
+                } else {
+                    model->ActivityID.SetCurrent(rs[30].convert<Poco::UInt64>());
+                }
+
                 model->ClearDirty();
 
                 list->push_back(model);
@@ -2045,7 +2064,8 @@ error Database::saveModel(
                           "previous_duration = :previous_duration, "
                           "previous_description = :previous_description, "
                           "previous_created_with = :previous_created_with, "
-                          "previous_tags = :previous_tags "
+                          "previous_tags = :previous_tags, "
+                          "activity_id = :activity_id "
                           "where local_id = :local_id",
                           useRef(model->ID()),
                           useRef(model->UID()),
@@ -2076,6 +2096,7 @@ error Database::saveModel(
                           useRef(model->Description.GetPrevious()),
                           useRef(model->CreatedWith.GetPrevious()),
                           bind(TimeEntry::TagsVectorToString(model->TagNames.GetPrevious())),
+                          useRef(model->ActivityID()),
                           useRef(model->LocalID()),
                           now;
             } else {
@@ -2104,7 +2125,8 @@ error Database::saveModel(
                           "previous_duration = :previous_duration, "
                           "previous_description = :previous_description, "
                           "previous_created_with = :previous_created_with, "
-                          "previous_tags = :previous_tags "
+                          "previous_tags = :previous_tags, "
+                          "activity_id = :activity_id "
                           "where local_id = :local_id",
                           useRef(model->UID()),
                           useRef(model->Description()),
@@ -2134,6 +2156,7 @@ error Database::saveModel(
                           useRef(model->Description.GetPrevious()),
                           useRef(model->CreatedWith.GetPrevious()),
                           bind(TimeEntry::TagsVectorToString(model->TagNames.GetPrevious())),
+                          useRef(model->ActivityID()),
                           useRef(model->LocalID()),
                           now;
             }
@@ -2164,7 +2187,8 @@ error Database::saveModel(
                           "start, stop, duration, "
                           "tags, created_with, deleted_at, updated_at, "
                           "project_guid, validation_error, "
-                          "previous_pid, previous_project_guid, previous_tid, previous_billable, previous_start, previous_stop, previous_duration, previous_description, previous_created_with, previous_tags"
+                          "previous_pid, previous_project_guid, previous_tid, previous_billable, previous_start, previous_stop, previous_duration, previous_description, previous_created_with, previous_tags, "
+                          "activity_id"
                           ") values ("
                           ":id, :uid, :description, :wid, "
                           ":guid, :pid, :tid, :billable, "
@@ -2172,7 +2196,8 @@ error Database::saveModel(
                           ":start, :stop, :duration, "
                           ":tags, :created_with, :deleted_at, :updated_at, "
                           ":project_guid, :validation_error, "
-                          ":previous_pid, :previous_project_guid, :previous_tid, :previous_billable, :previous_start, :previous_stop, :previous_duration, :previous_description, :previous_created_with, :previous_tags "
+                          ":previous_pid, :previous_project_guid, :previous_tid, :previous_billable, :previous_start, :previous_stop, :previous_duration, :previous_description, :previous_created_with, :previous_tags, "
+                          ":activity_id "
                           ")",
                           useRef(model->ID()),
                           useRef(model->UID()),
@@ -2203,6 +2228,7 @@ error Database::saveModel(
                           useRef(model->Description.GetPrevious()),
                           useRef(model->CreatedWith.GetPrevious()),
                           bind(TimeEntry::TagsVectorToString(model->TagNames.GetPrevious())),
+                          useRef(model->ActivityID()),
                           now;
             } else {
                 *session_ <<
@@ -2212,7 +2238,8 @@ error Database::saveModel(
                           "start, stop, duration, "
                           "tags, created_with, deleted_at, updated_at, "
                           "project_guid, validation_error, "
-                          "previous_pid, previous_project_guid, previous_tid, previous_billable, previous_start, previous_stop, previous_duration, previous_description, previous_created_with, previous_tags"
+                          "previous_pid, previous_project_guid, previous_tid, previous_billable, previous_start, previous_stop, previous_duration, previous_description, previous_created_with, previous_tags, "
+                          "activity_id"
                           ") values ("
                           ":uid, :description, :wid, "
                           ":guid, :pid, :tid, :billable, "
@@ -2220,7 +2247,8 @@ error Database::saveModel(
                           ":start, :stop, :duration, "
                           ":tags, :created_with, :deleted_at, :updated_at, "
                           ":project_guid, :validation_error, "
-                          ":previous_pid, :previous_project_guid, :previous_tid, :previous_billable, :previous_start, :previous_stop, :previous_duration, :previous_description, :previous_created_with, :previous_tags "
+                          ":previous_pid, :previous_project_guid, :previous_tid, :previous_billable, :previous_start, :previous_stop, :previous_duration, :previous_description, :previous_created_with, :previous_tags, "
+                          ":activity_id "
                           ")",
                           useRef(model->UID()),
                           useRef(model->Description()),
@@ -2250,6 +2278,7 @@ error Database::saveModel(
                           useRef(model->Description.GetPrevious()),
                           useRef(model->CreatedWith.GetPrevious()),
                           bind(TimeEntry::TagsVectorToString(model->TagNames.GetPrevious())),
+                          useRef(model->ActivityID()),
                           now;
             }
             error err = last_error("saveTimeEntry");

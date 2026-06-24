@@ -2058,6 +2058,25 @@ error Context::SetSettingsColorTheme(const uint8_t color_theme) {
         db()->SetSettingsColorTheme(color_theme));
 }
 
+error Context::SetSettingsDefaultActivity(const Poco::UInt64 activity_id) {
+    return applySettingsSaveResultToUI(
+        db()->SetSettingsDefaultActivityID(activity_id));
+}
+
+void Context::displayActivities() {
+    // The global Redmine TimeEntryActivity list, captured at login/sync. Delivered
+    // through the generic-view list (id + name) like the workspace selector.
+    const auto &activities = RedmineClient::Activities();
+    std::vector<view::Generic> views;
+    for (auto it = activities.begin(); it != activities.end(); ++it) {
+        view::Generic view;
+        view.ID = it->first;
+        view.Name = it->second;
+        views.push_back(view);
+    }
+    UI()->DisplayActivities(views);
+}
+
 error Context::SetSettingsForceIgnoreCert(const bool_t force_ignore_cert) {
     error err = applySettingsSaveResultToUI(
         db()->SetSettingsForceIgnoreCert(force_ignore_cert));
@@ -2943,6 +2962,9 @@ error Context::SetLoggedInUserFromJSON(
 
     updateUI(UIElements::Reset());
 
+    // Redmine fork: push the global activity list resolved during me().
+    displayActivities();
+
     err = save(false);
     if (err != noError) {
         return displayError(err);
@@ -3068,6 +3090,12 @@ TimeEntry *Context::Start(
                           started,
                           ended,
                           stop_current_running);
+
+        // Redmine fork: stamp new entries with the user's default activity so
+        // the editor preselects it and the eventual POST uses it.
+        if (te && settings_.default_activity_id > 0 && te->ActivityID() == 0) {
+            te->SetActivityID(settings_.default_activity_id, false);
+        }
     }
 
     error err = save(true);
@@ -3780,6 +3808,43 @@ error Context::SetTimeEntryBillable(
         }
 
         te->SetBillable(value, true);
+    }
+
+    if (te->Dirty()) {
+        te->ClearValidationError();
+        te->SetUIModified();
+    }
+
+    return displayError(save(true));
+}
+
+error Context::SetTimeEntryActivity(
+    const std::string &GUID,
+    const Poco::UInt64 activity_id) {
+    if (GUID.empty()) {
+        return displayError(std::string(__FUNCTION__) + ": Missing GUID");
+    }
+
+    TimeEntry *te = nullptr;
+
+    {
+        Poco::Mutex::ScopedLock lock(user_m_);
+        if (!user_) {
+            logger.warning("Cannot set activity, user logged out");
+            return noError;
+        }
+        te = user_->related.TimeEntryByGUID(GUID);
+
+        if (!te) {
+            logger.warning("Time entry not found: " + GUID);
+            return noError;
+        }
+
+        if (isTimeEntryLocked(te)) {
+            return logAndDisplayUserTriedEditingLockedEntry();
+        }
+
+        te->SetActivityID(activity_id, true);
     }
 
     if (te->Dirty()) {
@@ -5516,6 +5581,10 @@ error Context::pullAllUserData() {
         if (err != noError) {
             return err;
         }
+
+        // Redmine fork: me() resolved the global activity list as a side effect;
+        // push it to the UI pickers.
+        displayActivities();
 
         {
             Poco::Mutex::ScopedLock lock(user_m_);

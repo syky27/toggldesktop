@@ -30,6 +30,13 @@ int RedmineClient::kCustomFieldStop = 14;   // toggl_stop
 int RedmineClient::kCustomFieldGUID = 13;   // toggl_guid
 int RedmineClient::kDefaultActivityID = 6;  // Development
 
+std::vector<std::pair<Poco::UInt64, std::string>> RedmineClient::activities_;
+
+const std::vector<std::pair<Poco::UInt64, std::string>> &
+RedmineClient::Activities() {
+    return activities_;
+}
+
 static const Poco::UInt64 kSyntheticWorkspaceID = 1;
 static const int kPageSize = 100;
 // Match the app's ~30-day local time-entry retention.
@@ -199,11 +206,17 @@ void RedmineClient::ResolveSchema(const std::string &apiKey,
             == noError) {
         const Json::Value &arr = acts["time_entry_activities"];
         int byName = 0, byDefault = 0, firstActive = 0;
+        std::vector<std::pair<Poco::UInt64, std::string>> list;
         for (unsigned int i = 0; i < arr.size(); i++) {
             const Json::Value &a = arr[i];
             int id = a["id"].asInt();
             if (id <= 0) continue;
             bool active = !a.isMember("active") || a["active"].asBool();
+            // Capture every active activity for the editor/Preferences pickers.
+            if (active) {
+                list.push_back(std::make_pair(
+                    a["id"].asUInt64(), a["name"].asString()));
+            }
             if (byName == 0 && iequals(a["name"].asString(), "Development")) {
                 byName = id;
             }
@@ -212,6 +225,9 @@ void RedmineClient::ResolveSchema(const std::string &apiKey,
         }
         int chosen = byName ? byName : (byDefault ? byDefault : firstActive);
         if (chosen) kDefaultActivityID = chosen;
+        if (!list.empty()) {
+            activities_ = list;
+        }
     }
 
     // Custom-field ids by name. The user's own time entries carry {id,name} and
@@ -348,6 +364,11 @@ error RedmineClient::FetchAccountJSON(
         }
         if (rt.isMember("issue")) {
             te["tid"] = Json::UInt64(rt["issue"]["id"].asUInt64());
+        }
+        if (rt.isMember("activity") && rt["activity"].isMember("id")) {
+            // Surface the entry's real Redmine activity so the editor preselects
+            // it and a later save doesn't clobber it with the default.
+            te["activity_id"] = Json::UInt64(rt["activity"]["id"].asUInt64());
         }
         te["description"] =
             rt["comments"].isString() ? rt["comments"].asString() : "";

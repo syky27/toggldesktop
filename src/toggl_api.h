@@ -59,6 +59,8 @@ extern "C" {
         char_t *Color;
         char_t *GUID;
         bool_t Billable;
+        // Redmine TimeEntryActivity id (Redmine fork).
+        uint64_t ActivityID;
         char_t *Tags;
         uint64_t Started;
         uint64_t Ended;
@@ -197,6 +199,8 @@ extern "C" {
         uint8_t ActiveTab;
         uint8_t ColorTheme;
         bool_t ForceIgnoreCert;
+        // Redmine fork: default TimeEntryActivity id for new entries.
+        uint64_t DefaultActivityID;
     } TogglSettingsView;
 
     typedef struct {
@@ -582,6 +586,11 @@ extern "C" {
         void *context,
         TogglDisplayViewItems cb);
 
+    // Redmine fork: the global TimeEntryActivity list (editor + Preferences).
+    TOGGL_EXPORT void toggl_on_activities(
+        void *context,
+        TogglDisplayViewItems cb);
+
     TOGGL_EXPORT void toggl_on_client_select(
         void *context,
         TogglDisplayViewItems cb);
@@ -812,6 +821,12 @@ extern "C" {
         const char_t *guid,
         bool_t value);
 
+    // Redmine fork: set the entry's TimeEntryActivity id.
+    TOGGL_EXPORT bool_t toggl_set_time_entry_activity(
+        void *context,
+        const char_t *guid,
+        const uint64_t activity_id);
+
     TOGGL_EXPORT bool_t toggl_set_time_entry_description(
         void *context,
         const char_t *guid,
@@ -922,6 +937,11 @@ extern "C" {
     TOGGL_EXPORT bool_t toggl_set_settings_color_theme(
         void *context,
         const uint8_t color_theme);
+
+    // Redmine fork: persist the default TimeEntryActivity id for new entries.
+    TOGGL_EXPORT bool_t toggl_set_settings_default_activity(
+        void *context,
+        const uint64_t activity_id);
 
     TOGGL_EXPORT bool_t toggl_set_settings_idle_minutes(
         void *context,

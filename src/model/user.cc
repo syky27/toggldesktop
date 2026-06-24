@@ -475,9 +475,78 @@ void User::Stop(std::vector<TimeEntry *> *stopped) {
             stopped->push_back(te);
         }
         te->StopTracking();
+        // Redmine fork: a timer that ran past local midnight must become one
+        // entry per local day so Redmine's per-day (spent_on) hours are correct.
+        splitAtMidnight(te, stopped);
         te = RunningTimeEntry();
     }
 
+}
+
+// Returns the unix epoch of the first local midnight strictly after `epoch`.
+static Poco::Int64 nextLocalMidnight(Poco::Int64 epoch) {
+    Poco::LocalDateTime ldt(Poco::Timestamp::fromEpochTime(epoch));
+    Poco::LocalDateTime dayStart(ldt.year(), ldt.month(), ldt.day(), 0, 0, 0);
+    Poco::LocalDateTime nextDay = dayStart + Poco::Timespan(1, 0, 0, 0, 0);
+    return nextDay.timestamp().epochTime();
+}
+
+// If `te` spans more than one local day, truncate it at local midnight and add a
+// fresh entry for each subsequent day, copying the entry's attributes (including
+// the Redmine ActivityID). Mirrors the DiscardTimeAt split pattern.
+void User::splitAtMidnight(TimeEntry *te, std::vector<TimeEntry *> *stopped) {
+    if (!te) {
+        return;
+    }
+    // Only finished entries (running entries have a negative duration).
+    if (te->DurationInSeconds() < 0) {
+        return;
+    }
+
+    // Walk forward, peeling off one local day at a time.
+    while (true) {
+        Poco::Int64 start = te->StartTime();
+        Poco::Int64 stop = te->StopTime();
+        if (stop <= start) {
+            return;
+        }
+        Poco::Int64 midnight = nextLocalMidnight(start);
+        if (stop <= midnight) {
+            return;  // fits within a single local day
+        }
+
+        // Truncate the current segment to local midnight.
+        te->SetStopTime(midnight, true);
+        te->SetDurationInSeconds(midnight - start, true);
+        if (te->Dirty()) {
+            te->ClearValidationError();
+            te->SetUIModified();
+        }
+
+        // Create the next-day segment as a copy carrying all attributes.
+        TimeEntry *split = new TimeEntry();
+        split->SetCreatedWith(HTTPClient::Config.UserAgent());
+        split->SetUID(ID());
+        split->SetDescription(te->Description(), false);
+        split->SetWID(te->WID());
+        split->SetPID(te->PID(), false);
+        split->SetTID(te->TID(), false);
+        split->SetProjectGUID(te->ProjectGUID(), false);
+        split->SetTags(te->Tags(), false);
+        split->SetBillable(te->Billable(), false);
+        split->SetActivityID(te->ActivityID(), false);
+        split->SetStartTime(midnight, false);
+        split->SetStopTime(stop, false);
+        split->SetDurationInSeconds(stop - midnight, false);
+        split->SetUIModified();
+        related.pushBackTimeEntry(split);
+        if (stopped) {
+            stopped->push_back(split);
+        }
+
+        // Continue splitting the remainder (handles >2-day spans).
+        te = split;
+    }
 }
 
 TimeEntry *User::DiscardTimeAt(

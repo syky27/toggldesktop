@@ -181,6 +181,9 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
 
     error SetSettingsColorTheme(const uint8_t color_theme);
 
+    // Redmine fork: default TimeEntryActivity id applied to new entries.
+    error SetSettingsDefaultActivity(const Poco::UInt64 activity_id);
+
     error SetSettingsForceIgnoreCert(const bool_t force_ignore_cert);
 
     error SetSettingsIdleMinutes(const Poco::UInt64 idle_minutes);
@@ -445,6 +448,11 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
         const std::string &GUID,
         const bool value);
 
+    // Redmine fork: per-entry TimeEntryActivity id.
+    error SetTimeEntryActivity(
+        const std::string &GUID,
+        const Poco::UInt64 activity_id);
+
     error SetTimeEntryDescription(
         const std::string &GUID,
         const std::string &value);
@@ -686,6 +694,9 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     void displayPomodoroBreak();
 
     void updateUI(const UIElements &elements);
+
+    // Redmine fork: push the global TimeEntryActivity list to the UI pickers.
+    void displayActivities();
 
     error displayError(const error &err);
 

@@ -201,6 +201,13 @@ bool_t toggl_set_settings_color_theme(
     return toggl::noError == app(context)->SetSettingsColorTheme(color_theme);
 }
 
+bool_t toggl_set_settings_default_activity(
+    void *context,
+    const uint64_t activity_id) {
+    return toggl::noError ==
+           app(context)->SetSettingsDefaultActivity(activity_id);
+}
+
 bool_t toggl_set_settings_idle_minutes(
     void *context,
     const uint64_t idle_minutes) {
@@ -953,6 +960,14 @@ bool_t toggl_set_time_entry_billable(
            SetTimeEntryBillable(to_string(guid), value);
 }
 
+bool_t toggl_set_time_entry_activity(
+    void *context,
+    const char_t *guid,
+    const uint64_t activity_id) {
+    return toggl::noError == app(context)->
+           SetTimeEntryActivity(to_string(guid), activity_id);
+}
+
 bool_t toggl_set_time_entry_description(
     void *context,
     const char_t *guid,
@@ -1347,6 +1362,12 @@ void toggl_on_workspace_select(
     void *context,
     TogglDisplayViewItems cb) {
     app(context)->UI()->OnDisplayWorkspaceSelect(cb);
+}
+
+void toggl_on_activities(
+    void *context,
+    TogglDisplayViewItems cb) {
+    app(context)->UI()->OnDisplayActivities(cb);
 }
 
 void toggl_on_client_select(

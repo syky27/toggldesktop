@@ -151,6 +151,18 @@ class TogglApi : public QObject {
         const QString guid,
         const bool billable);
 
+    // Redmine fork: set/clear the entry's TimeEntryActivity id.
+    bool setTimeEntryActivity(
+        const QString guid,
+        const uint64_t activity_id);
+
+    // Redmine fork: persist the default TimeEntryActivity id for new entries.
+    bool setSettingsDefaultActivity(const uint64_t activity_id);
+
+    // Create an empty entry over [start, end] (used by the calendar's
+    // click-empty-to-create). Returns the new entry's GUID.
+    QString createEmptyTimeEntry(const int64_t started, const int64_t ended);
+
     bool setTimeEntryDate(
         const QString guid,
         const int64_t unix_timestamp);
@@ -349,6 +361,10 @@ class TogglApi : public QObject {
     void displayWorkspaceSelect(
         QVector<GenericView *> list);
 
+    // Redmine fork: the global TimeEntryActivity list.
+    void displayActivities(
+        QVector<GenericView *> list);
+
     void updateShowHideShortcut();
 
     void updateContinueStopShortcut();
@@ -398,6 +414,8 @@ void on_display_mini_timer_autocomplete(
 void on_display_project_autocomplete(
     TogglAutocompleteView *first);
 void on_display_workspace_select(
+    TogglGenericView *first);
+void on_display_activities(
     TogglGenericView *first);
 void on_display_client_select(
     TogglGenericView *first);

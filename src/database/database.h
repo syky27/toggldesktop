@@ -137,6 +137,10 @@ class TOGGL_INTERNAL_EXPORT Database {
 
     error SetSettingsForceIgnoreCert(const bool& force_ignore_cert);
 
+    // Redmine fork: default TimeEntryActivity id applied to new entries.
+    error SetSettingsDefaultActivityID(const Poco::UInt64 default_activity_id);
+    error GetSettingsDefaultActivityID(Poco::UInt64 *result);
+
     error SetSettingsRemindTimes(
         const std::string &remind_starts,
         const std::string &remind_ends);

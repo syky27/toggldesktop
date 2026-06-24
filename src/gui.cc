@@ -44,6 +44,7 @@ void TimeEntry::Fill(toggl::TimeEntry * const model) {
         toggl::Formatter::FormatTimeForTimeEntryEditor(
             model->StopTime());
     Billable = model->Billable();
+    ActivityID = model->ActivityID();
     Tags = model->Tags();
     UpdatedAt = model->UpdatedAt();
     DateHeader =
@@ -687,6 +688,18 @@ void GUI::DisplayWorkspaceSelect(
 
     TogglGenericView *first = generic_to_view_item_list(list);
     on_display_workspace_select_(first);
+    view_list_clear(first);
+}
+
+void GUI::DisplayActivities(
+    const std::vector<view::Generic> &list) {
+    logger.debug("DisplayActivities");
+
+    if (!on_display_activities_) {
+        return;
+    }
+    TogglGenericView *first = generic_to_view_item_list(list);
+    on_display_activities_(first);
     view_list_clear(first);
 }
 

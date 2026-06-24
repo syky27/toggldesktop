@@ -34,6 +34,7 @@ class TOGGL_INTERNAL_EXPORT TimeEntry : public BaseModel, public TimedEvent {
     Property<bool> Billable { false };
     Property<bool> DurOnly { false };
     Property<bool> SkipPomodoro { false };
+    Property<Poco::UInt64> ActivityID { 0 };  // Redmine TimeEntryActivity id
 
     void SetDescription(const std::string &value, bool userModified);
     void SetCreatedWith(const std::string &value);
@@ -61,6 +62,7 @@ class TOGGL_INTERNAL_EXPORT TimeEntry : public BaseModel, public TimedEvent {
     void SetLastStartAt(Poco::Int64 value);
 
     void SetBillable(bool value, bool userModified);
+    void SetActivityID(Poco::UInt64 value, bool userModified);
     void SetDurOnly(bool value);
     void SetSkipPomodoro(bool value);
 

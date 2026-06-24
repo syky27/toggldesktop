@@ -219,6 +219,10 @@ class TOGGL_INTERNAL_EXPORT User : public BaseModel {
     void LoadAlphaFeaturesFromJSON(const Json::Value& data);
 
  private:
+    // Redmine fork: split a finished entry that crosses local midnight into one
+    // entry per local day (called from Stop()).
+    void splitAtMidnight(TimeEntry *te, std::vector<TimeEntry *> *stopped);
+
     void loadUserTagFromJSON(
         Json::Value data,
         std::set<Poco::UInt64> *alive = nullptr);

@@ -29,7 +29,7 @@ static const int64_t kMinDuration = 300;    // smallest entry the grid allows
 DayGrid::DayGrid(QWidget *parent)
     : QWidget(parent), dayStart_(0), mode_(None),
       origStart_(0), origStop_(0), previewStart_(0), previewStop_(0),
-      pressY_(0), moved_(false) {
+      pressY_(0), moved_(false), pressed_(false) {
     setMinimumHeight(24 * 26);  // ~26 px/hour, scrollable
     setMouseTracking(true);
     setAttribute(Qt::WA_StyledBackground, true);
@@ -133,12 +133,21 @@ void DayGrid::paintEvent(QPaintEvent *) {
 }
 
 void DayGrid::mousePressEvent(QMouseEvent *event) {
+    // Record the press for click detection (a press that ends without a drag is
+    // a click: edit a block, or create an entry on empty space).
+    pressed_ = true;
+    pressPos_ = event->pos();
+    moved_ = false;
+
     TimeEntryView *hit = nullptr;
     DragMode m = hitTest(event->pos(), &hit);
     if (m == None || !hit) {
+        // Empty space: no drag, but remember it for a possible click-to-create.
+        pressGuid_.clear();
         QWidget::mousePressEvent(event);
         return;
     }
+    pressGuid_ = hit->GUID;
     mode_ = m;
     dragGuid_ = hit->GUID;
     origStart_ = hit->Started;
@@ -146,7 +155,6 @@ void DayGrid::mousePressEvent(QMouseEvent *event) {
     previewStart_ = origStart_;
     previewStop_ = origStop_;
     pressY_ = event->pos().y();
-    moved_ = false;
 }
 
 void DayGrid::mouseMoveEvent(QMouseEvent *event) {
@@ -187,21 +195,47 @@ void DayGrid::mouseMoveEvent(QMouseEvent *event) {
 }
 
 void DayGrid::mouseReleaseEvent(QMouseEvent *event) {
-    Q_UNUSED(event);
-    if (mode_ == None) return;
-
     DragMode m = mode_;
     QString guid = dragGuid_;
     int64_t ps = previewStart_;
     int64_t pe = previewStop_;
     bool moved = moved_;
+    bool pressed = pressed_;
+    QString clickGuid = pressGuid_;
 
     mode_ = None;
     dragGuid_.clear();
+    pressGuid_.clear();
+    pressed_ = false;
     moved_ = false;
     setCursor(Qt::ArrowCursor);
 
-    if (!moved || guid.isEmpty()) {
+    // A press that didn't turn into a drag is a click.
+    if (pressed && !moved) {
+        if (!clickGuid.isEmpty()) {
+            // Click a block -> open its editor.
+            TogglApi::instance->editTimeEntry(clickGuid, "description");
+        } else {
+            // Click empty space -> create a 30-min entry at the snapped click
+            // time, then open the editor on the issue/project field so the user
+            // picks an issue (the entry stays local until then).
+            if (height() > 0) {
+                int64_t clickSec = static_cast<int64_t>(event->pos().y())
+                    * kSecondsPerDay / height();
+                int64_t start = snap(dayStart_ + clickSec);
+                int64_t end = start + 30 * 60;
+                QString newGuid =
+                    TogglApi::instance->createEmptyTimeEntry(start, end);
+                if (!newGuid.isEmpty()) {
+                    TogglApi::instance->editTimeEntry(newGuid, "project");
+                }
+            }
+        }
+        update();
+        return;
+    }
+
+    if (m == None || !moved || guid.isEmpty()) {
         update();
         return;
     }
