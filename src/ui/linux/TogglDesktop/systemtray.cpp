@@ -28,6 +28,7 @@ SystemTray::SystemTray(MainWindowController *parent, QIcon defaultIcon)
     connect(TogglApi::instance, SIGNAL(displayRunningTimerState(TimeEntryView *)), this, SLOT(displayRunningTimerState(TimeEntryView *)));
     connect(TogglApi::instance, SIGNAL(displayStoppedTimerState()), this, SLOT(displayStoppedState()));
 
+#ifdef __linux__
     notifications = new QDBusInterface("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications", QDBusConnection::sessionBus(), this);
     notificationsPresent = notifications->isValid();
 
@@ -37,6 +38,12 @@ SystemTray::SystemTray(MainWindowController *parent, QIcon defaultIcon)
     auto pendingCall = notifications->asyncCall("GetCapabilities");
     auto watcher = new QDBusPendingCallWatcher(pendingCall, this);
     connect(watcher, &QDBusPendingCallWatcher::finished, this, &SystemTray::notificationCapabilitiesReceived);
+#else
+    // D-Bus desktop notifications are Linux-only; on macOS fall back to
+    // QSystemTrayIcon::showMessage (handled in requestNotification()).
+    notifications = nullptr;
+    notificationsPresent = false;
+#endif
 }
 
 MainWindowController *SystemTray::mainWindow() {

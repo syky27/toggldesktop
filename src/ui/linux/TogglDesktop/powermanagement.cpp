@@ -16,12 +16,19 @@ PowerManagement::PowerManagement(QObject *parent)
         commitDataRequested = true;
     });
 
+#ifdef __linux__
     login1 = new QDBusInterface("org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager", QDBusConnection::systemBus(), this);
 
     getInhibitor();
 
     available = available && connect(login1, SIGNAL(PrepareForShutdown(bool)), this, SLOT(onPrepareForShutdown(bool)));
     available = available && connect(login1, SIGNAL(PrepareForSleep(bool)), this, SLOT(onPrepareForSleep(bool)));
+#else
+    // login1 (systemd-logind) is Linux-only; on macOS rely on the
+    // QGuiApplication::commitDataRequest fallback above.
+    login1 = nullptr;
+    available = false;
+#endif
 }
 
 bool PowerManagement::isAvailable() const {

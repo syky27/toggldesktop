@@ -47,7 +47,9 @@ IdleNotificationWidget::IdleNotificationWidget(QStackedWidget *parent)
     , ui(new Ui::IdleNotificationWidget) {
     ui->setupUi(this);
 
+#ifdef __linux__
     screensaver = new QDBusInterface("org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver", "org.freedesktop.ScreenSaver", QDBusConnection::sessionBus(), this);
+#endif
 
     connect(TogglApi::instance, &TogglApi::displayIdleNotification, this, &IdleNotificationWidget::displayIdleNotification);
 
@@ -60,7 +62,9 @@ IdleNotificationWidget::IdleNotificationWidget(QStackedWidget *parent)
     connect(TogglApi::instance, SIGNAL(displayLogin(bool,uint64_t)),  // NOLINT
             this, SLOT(displayLogin(bool,uint64_t)));  // NOLINT
 
+#ifdef __linux__
     connect(screensaver, SIGNAL(ActiveChanged(bool)), this, SLOT(onScreensaverActiveChanged(bool)));
+#endif
 
     connect(idleHintTimer, &QTimer::timeout, this, &IdleNotificationWidget::requestIdleHint);
     idleHintTimer->setInterval(5000);
