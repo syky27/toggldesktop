@@ -61,9 +61,18 @@ export OUTPUT="$APP_NAME-$VER-x86_64.AppImage"
 export VERSION="$VER"
 export QMAKE="${QMAKE:-qmake}"
 export EXTRA_QT_PLUGINS="svg"   # the app renders SVG icons (continue/group glyphs)
+export APPIMAGE_EXTRACT_AND_RUN=1   # run the linuxdeploy/appimagetool AppImages without FUSE (CI runners lack it)
+
+# The installed TogglDesktop binary NEEDs libTogglDesktopLibrary.so (and that in
+# turn NEEDs libQxt/libBugsnag), all installed to AppDir/usr/lib — but the binary
+# carries no RUNPATH to that dir, so linuxdeploy's dependency walk can't find them
+# ("Could not find dependency: libTogglDesktopLibrary.so"). Put usr/lib on the
+# search path so the whole chain resolves, and force-deploy the main lib too.
+export LD_LIBRARY_PATH="$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 "$TOOLS/linuxdeploy-x86_64.AppImage" \
     --appdir "$APPDIR" \
     --executable "$APPDIR/usr/bin/$BIN_NAME" \
+    --library "$APPDIR/usr/lib/libTogglDesktopLibrary.so" \
     --desktop-file "$APPDIR/$APP_NAME.desktop" \
     --icon-file "$APPDIR/redtick.png" \
     --plugin qt \
