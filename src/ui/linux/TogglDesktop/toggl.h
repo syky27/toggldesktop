@@ -256,10 +256,6 @@ class TogglApi : public QObject {
     void tosAccept();
     void openLegal(const QString &link);
 
-    bool sendFeedback(const QString topic,
-                      const QString details,
-                      const QString filename);
-
     bool discardTimeAt(const QString guid,
                        const uint64_t at,
                        const bool split_into_new_time_entry);

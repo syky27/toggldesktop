@@ -40,7 +40,6 @@ MainWindowController::MainWindowController(
   loggedIn(false),
   preferencesDialog(new PreferencesDialog(this)),
   aboutDialog(new AboutDialog(this)),
-  feedbackDialog(new FeedbackDialog(this)),
   icon(":/icons/1024x1024/toggldesktop.png"),
   iconDisabled(":/icons/1024x1024/toggldesktop_gray.png"),
   trayIcon(nullptr),
@@ -237,7 +236,6 @@ void MainWindowController::enableMenuActions() {
     ui->actionSync->setEnabled(loggedIn);
     ui->actionLogout->setEnabled(loggedIn);
     ui->actionClear_Cache->setEnabled(loggedIn);
-    ui->actionSend_Feedback->setEnabled(loggedIn);
     ui->actionReports->setEnabled(loggedIn);
     ui->actionEmail->setText(TogglApi::instance->userEmail());
     if (tracking) {
@@ -424,7 +422,6 @@ void MainWindowController::connectMenuActions() {
     connect(ui->actionSync,  &QAction::triggered, this, &MainWindowController::onActionSync);
     connect(ui->actionLogout,  &QAction::triggered, this, &MainWindowController::onActionLogout);
     connect(ui->actionClear_Cache,  &QAction::triggered, this, &MainWindowController::onActionClear_Cache);
-    connect(ui->actionSend_Feedback,  &QAction::triggered, this, &MainWindowController::onActionSend_Feedback);
     connect(ui->actionReports,  &QAction::triggered, this, &MainWindowController::onActionReports);
     connect(ui->actionShow,  &QAction::triggered, this, &MainWindowController::onActionShow);
     connect(ui->actionPreferences,  &QAction::triggered, this, &MainWindowController::onActionPreferences);
@@ -475,10 +472,6 @@ void MainWindowController::onActionPreferences() {
 
 void MainWindowController::onActionAbout() {
     aboutDialog->show();
-}
-
-void MainWindowController::onActionSend_Feedback() {
-    feedbackDialog->show();
 }
 
 void MainWindowController::onActionLogout() {

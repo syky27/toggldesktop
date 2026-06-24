@@ -1694,15 +1694,6 @@ TEST(toggl_api, toggl_search_help_articles) {
                 testing::testresult::help_article_names.end());
 }
 
-TEST(toggl_api, toggl_feedback_send) {
-    testing::App app;
-    std::string json = loadTestData();
-    ASSERT_TRUE(testing_set_logged_in_user(app.ctx(), json.c_str()));
-
-    ASSERT_TRUE(toggl_feedback_send(app.ctx(),
-                                    STR("Help"), STR("I need help"), STR("")));
-}
-
 TEST(toggl_api, toggl_set_time_entry_date) {
     testing::App app;
     std::string json = loadTestData();

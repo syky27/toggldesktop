@@ -13,7 +13,6 @@
 #include "const.h"
 #include "context.h"
 #include "util/custom_error_handler.h"
-#include "feedback.h"
 #include "util/formatter.h"
 #include "https_client.h"
 #include "model/project.h"
@@ -1054,43 +1053,6 @@ void toggl_fetch_tags(
     void *context,
     const int64_t workspaceID) {
     app(context)->FetchTags(workspaceID);
-}
-
-bool_t toggl_feedback_send(
-    void *context,
-    const char_t *topic,
-    const char_t *details,
-    const char_t *filename) {
-
-    toggl::Feedback feedback;
-    feedback.SetSubject(to_string(topic));
-    feedback.SetDetails(to_string(details));
-
-    if (filename != nullptr) {
-        // Check image size (max 5mb)
-#if defined(__MINGW32__) || defined(__MINGW64__)
-        using convert_typeX = std::codecvt_utf8<wchar_t>;
-        std::wstring_convert<convert_typeX, wchar_t> converterX;
-        std::string filenameConverted = converterX.to_bytes(filename);
-        std::ifstream file(filenameConverted, std::ifstream::ate | std::ifstream::binary);
-#else
-        std::ifstream file(filename, std::ifstream::ate | std::ifstream::binary);
-#endif // MINGW
-
-        if(file.is_open())
-        {
-            long long size = file.tellg();
-            file.close();
-
-            if (size > kMaxFileSize) {
-                // Filesize too big
-                return false;
-            }
-            feedback.SetAttachmentPath(to_string(filename));
-        }
-    }
-
-    return toggl::noError == app(context)->SendFeedback(feedback);
 }
 
 void toggl_search_help_articles(

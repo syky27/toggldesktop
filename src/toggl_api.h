@@ -717,12 +717,6 @@ extern "C" {
         void *context,
         const int type);
 
-    TOGGL_EXPORT bool_t toggl_feedback_send(
-        void *context,
-        const char_t *topic,
-        const char_t *details,
-        const char_t *filename);
-
     TOGGL_EXPORT void toggl_search_help_articles(
         void *context,
         const char_t *keywords);

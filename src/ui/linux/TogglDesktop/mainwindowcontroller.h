@@ -14,7 +14,6 @@
 #include "./toggl.h"
 #include "./preferencesdialog.h"
 #include "./aboutdialog.h"
-#include "./feedbackdialog.h"
 #include "./qxtglobalshortcut.h"
 #include "./systemtray.h"
 #include "./powermanagement.h"
@@ -85,7 +84,6 @@ class MainWindowController : public QMainWindow {
     void onActionReports();
     void onActionPreferences();
     void onActionAbout();
-    void onActionSend_Feedback();
     void onActionLogout();
     void onActionQuit();
     void onActionClear_Cache();
@@ -118,7 +116,6 @@ class MainWindowController : public QMainWindow {
 
     PreferencesDialog *preferencesDialog;
     AboutDialog *aboutDialog;
-    FeedbackDialog *feedbackDialog;
     CalendarView *calendarView = nullptr;
 
     QIcon icon;

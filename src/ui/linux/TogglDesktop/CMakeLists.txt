@@ -26,7 +26,6 @@ set(BINARY_SOURCE_FILES
     countryview.cpp
     desktopservices.cpp
     errorviewcontroller.cpp
-    feedbackdialog.cpp
     genericview.cpp
     idlenotificationwidget.cpp
     loginwidget.cpp
@@ -54,7 +53,6 @@ set(BINARY_SOURCE_FILES
     clipboarddialog.ui
     colorpicker.ui
     errorviewcontroller.ui
-    feedbackdialog.ui
     idlenotificationwidget.ui
     loginwidget.ui
     mainwindowcontroller.ui

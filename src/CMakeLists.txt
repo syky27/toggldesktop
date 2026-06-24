@@ -65,7 +65,6 @@ set(LIBRARY_SOURCE_FILES
     analytics.cc
     context.cc
     error.cc
-    feedback.cc
     gui.cc
     help_article.cc
     https_client.cc

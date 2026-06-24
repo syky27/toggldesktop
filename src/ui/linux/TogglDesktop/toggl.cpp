@@ -804,15 +804,6 @@ bool TogglApi::setTimeEntryDuration(
                                          toCStr(value));
 }
 
-bool TogglApi::sendFeedback(const QString topic,
-                            const QString details,
-                            const QString filename) {
-    return toggl_feedback_send(ctx,
-                               toCStr(topic),
-                               toCStr(details),
-                               toCStr(filename));
-}
-
 void TogglApi::setShowHideKey(const QString keys) {
     toggl_set_key_show(ctx, toCStr(keys));
     TogglApi::instance->updateShowHideShortcut();

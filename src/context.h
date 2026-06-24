@@ -12,7 +12,6 @@
 
 #include "analytics.h"
 #include "util/custom_error_handler.h"
-#include "feedback.h"
 #include "gui.h"
 #include "help_article.h"
 #include "idle.h"
@@ -120,7 +119,6 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     void FullSync();
     void Sync();
     void TimelineUpdateServerSettings();
-    error SendFeedback(const Feedback &);
 
     // Load model update from JSON string (from WebSocket)
     error LoadUpdateFromJSONString(const std::string &json);
@@ -656,7 +654,6 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     void onPeriodicUpdateCheck(Poco::Util::TimerTask& task);  // NOLINT
     void onPeriodicInAppMessageCheck(Poco::Util::TimerTask& task);  // NOLINT
     void onTimelineUpdateServerSettings(Poco::Util::TimerTask& task);  // NOLINT
-    void onSendFeedback(Poco::Util::TimerTask& task);  // NOLINT
     void onPeriodicSync(Poco::Util::TimerTask& task);  // NOLINT
     void onTrackSettingsUsage(Poco::Util::TimerTask& task);  // NOLINT
     void onWake(Poco::Util::TimerTask& task);  // NOLINT
@@ -826,8 +823,6 @@ class TOGGL_INTERNAL_EXPORT Context : public TimelineDatasource {
     WindowChangeRecorder *window_change_recorder_;
 
     custom_error_handler error_handler_;
-
-    Feedback feedback_;
 
     // Tasks are scheduled at:
     Poco::Timestamp next_sync_at_;

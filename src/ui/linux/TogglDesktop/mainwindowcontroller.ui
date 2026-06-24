@@ -88,7 +88,6 @@
     <addaction name="actionPreferences"/>
     <addaction name="separator"/>
     <addaction name="actionAbout"/>
-    <addaction name="actionSend_Feedback"/>
     <addaction name="actionHelp"/>
     <addaction name="actionLogout"/>
     <addaction name="actionClear_Cache"/>
@@ -141,11 +140,6 @@
   <action name="actionAbout">
    <property name="text">
     <string>&amp;About</string>
-   </property>
-  </action>
-  <action name="actionSend_Feedback">
-   <property name="text">
-    <string>Send &amp;Feedback</string>
    </property>
   </action>
   <action name="actionLogout">
