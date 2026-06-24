@@ -9,6 +9,37 @@
 > Once GitHub access is enabled, every issue below can be created 1:1 (Epic → sub-issues) and then
 > checked off as implemented. Each issue has a stable slug (e.g. `FP-12`) for cross-referencing.
 
+## Implementation status — 2026-06-24
+
+The port has been implemented and is building. Status by issue (✅ done & verified,
+🟡 partial/scaffolded, ⬜ follow-up needing a device/server):
+
+**Verified on Linux (built + tested in CI-equivalent run):**
+- ✅ FP-01 Flutter scaffold (5 platforms) · FP-02 ADR (Riverpod + FFI threading)
+- ✅ FP-10 Core builds standalone as `libTogglDesktopLibrary.so` (205 `toggl_*` symbols, no Qt)
+- ✅ FP-20 ffigen full bindings (410 symbols) + hand-written focused subset
+- ✅ FP-21 `CoreService` (lifecycle, login/logout/continue/stop/start, editor setters, marshalling)
+- ✅ FP-22 callbacks → Dart streams; **FP-22b** thread-safe C bridge shim (`bridge.c`, deep-copy)
+- ✅ FP-23 Dart models · FP-24 providers · FP-25 per-platform DB path + bundled CA cert
+- ✅ FP-40 responsive shell · FP-41 login · FP-42 timer bar · FP-43 list · FP-44 editor · FP-46 calendar day-grid · FP-47 settings · FP-48 theme
+- ✅ FP-60 core wired into `flutter build linux` (bundles the `.so`) — **full desktop app builds**
+- ✅ FP-61 CI workflow (build core → ffigen → analyze → test → FFI smoke test → build matrix)
+- ✅ FP-13 (offline half) `CoreService` starts the real core over FFI (`ui_start`/`VerifyCallbacks` pass)
+- ✅ FP-31 contributor docs (`app/README.md`)
+
+**Partial / scaffolded:**
+- 🟡 FP-45 issue picker (project field in editor; live Redmine search = follow-up)
+- 🟡 FP-46 calendar (day grid + tap-edit done; drag-move/edge-resize = follow-up; setters wired)
+- 🟡 FP-52 idle, FP-54 notifications (core streams wired + in-app banners; OS notification = swap `NotificationPresenter`)
+
+**Follow-up (needs device/toolchain/backend):**
+- ⬜ FP-11 Android NDK build · FP-12 iOS xcframework · FP-64 Windows packaging · FP-62/63 store releases
+- ⬜ FP-13 (online half) login round-trip against a live Redmine server
+- ⬜ FP-50 tray · FP-51 global shortcuts · FP-53 timeline/autotracker · FP-55 mobile bg sync · FP-30 parity sweep
+
+See `platform-features.md` for the Phase-5 plugin map. Acceptance-criteria checkboxes
+below remain as the per-issue tracking surface.
+
 ## Architecture recap (why this is a UI swap, not a rewrite)
 
 - **Reused as-is:** `libTogglDesktopLibrary`, ~32,410 LOC under `src/` — `context.cc`,
