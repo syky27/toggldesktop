@@ -15,6 +15,7 @@
   <a href="#about">About</a> •
   <a href="#built-with-claude-code">Built with Claude Code</a> •
   <a href="#how-it-works">How it works</a> •
+  <a href="#redmine-setup-required-custom-fields">Custom fields</a> •
   <a href="#configure">Configure</a> •
   <a href="#build">Build</a> •
   <a href="#credits">Credits</a>
@@ -53,8 +54,36 @@ std::string WebSocket()  { return BaseURL(); }
 
 The base URL is set at runtime on the login screen via `urls::SetBaseURL()` and persisted beside the local database, so it survives restarts. For headless / CI runs it falls back to the **`TOGGL_REDMINE_URL`** environment variable. Nothing is hardcoded to an internal host. A small `RedmineClient` (`src/redmine_client.{h,cc}`) fans the login out across Redmine's `/users/current`, `/projects`, `/issues`, `/time_entries` and activity endpoints and assembles what the existing model loader expects.
 
+# Redmine setup: required custom fields
+
+Before you track anything, your Redmine instance needs **three time-entry custom fields**. Redtick stores a little extra data on every time entry through them, and without them you lose exact clock times and reliable editing/deletion. Create them once, in **Administration → Custom fields → New custom field → Time entries**:
+
+| Name (exact) | Format | Holds | Required? |
+| --- | --- | --- | --- |
+| `toggl_start` | Text | Exact start time, ISO 8601 (e.g. `2026-06-24T09:03:11+02:00`) | No |
+| `toggl_stop`  | Text | Exact stop time, ISO 8601 | No |
+| `toggl_guid`  | Text | The app's stable id for the entry (used to match edits/deletes) | No |
+
+Setup notes:
+
+- **The names must match exactly** — `toggl_start`, `toggl_stop`, `toggl_guid`. Redtick resolves the fields *by name* at login (it never assumes hardcoded field ids), so a typo means the field won't be found.
+- **Format must be `Text`** (a plain string). The values are ISO 8601 timestamps and a GUID, both written and read as text.
+- **Leave "Required" unchecked.** Redtick fills these in automatically, but entries logged from the Redmine web UI won't have them — making them required would break manual logging.
+- **Tick the projects** the field applies to (or "for all projects"), and keep it **visible** so the API key can read it back.
+- You need Redmine **admin rights to create custom fields**, but you do *not* need admin rights to use them afterwards — a normal user's API key reads the ids straight off its own time entries.
+
+## Why these fields are needed
+
+A native Redmine time entry only records **`hours`** and **`spent_on`** (a calendar *date*, not a clock time), plus an activity and a comment. That's lossy for a desktop timer in two ways, and the custom fields close both gaps:
+
+- **Exact start/stop times.** Redmine has no concept of "started at 09:03, stopped at 10:47" — only "1.73 hours on 2026-06-24". `toggl_start` / `toggl_stop` preserve the precise timestamps so the day calendar can place and resize blocks correctly. When they're absent (e.g. an entry typed into the Redmine web UI), Redtick falls back to synthesizing a start time from `spent_on` + `hours`, so the block lands on the right day but at an approximate time.
+- **Stable identity for edits and deletes.** Redmine's own time-entry id changes meaning between machines and re-syncs; `toggl_guid` carries the app's own id so an edit (`PUT`) or delete (`DELETE`) reliably targets the *same* entry instead of creating duplicates.
+
+If you skip the fields entirely, tracking still works — new entries are created with the right hours and date — but exact times are approximated and idempotent editing is degraded. Creating the three fields is a one-time, five-minute step that makes the experience lossless.
+
 # Configure
 
+0. **One-time:** make sure the three [time-entry custom fields](#redmine-setup-required-custom-fields) exist on your Redmine instance.
 1. Launch Redtick.
 2. On the login screen, enter the URL of your Redmine instance (e.g. `https://redmine.example.com`) and your personal **API key** (Redmine → *My account* → *API access key*).
 3. Start tracking — entries sync to that Redmine backend.
