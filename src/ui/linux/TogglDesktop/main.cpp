@@ -73,7 +73,7 @@ int main(int argc, char *argv[]) try {
     Bugsnag::app.version = APP_VERSION;
 
     QCommandLineParser parser;
-    parser.setApplicationDescription("Toggl Track");
+    parser.setApplicationDescription("Redtick");
     parser.addHelpOption();
     parser.addVersionOption();
 

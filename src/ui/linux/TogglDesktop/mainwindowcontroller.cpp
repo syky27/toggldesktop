@@ -570,7 +570,7 @@ void MainWindowController::closeEvent(QCloseEvent *event) {
 
     QMessageBox::StandardButton dialog;
     dialog = QMessageBox::question(this,
-                                   "Quit Toggl Track",
+                                   "Quit Redtick",
                                    "Really quit the app?",
                                    QMessageBox::Ok | QMessageBox::Cancel);
     if (QMessageBox::Ok == dialog) {
@@ -592,7 +592,7 @@ void MainWindowController::displayUpdate(const QString url) {
     if (QMessageBox::Yes == QMessageBox(
         QMessageBox::Question,
         "Download new version?",
-        "A new version of Toggl Track is available. Continue with download?",
+        "A new version of Redtick is available. Continue with download?",
         QMessageBox::No|QMessageBox::Yes).exec()) {
         QMetaObject::invokeMethod(DesktopServices::instance(), "openUrl", Q_ARG(QUrl, url));
         quitApp();

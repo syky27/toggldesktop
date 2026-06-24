@@ -41,7 +41,7 @@ void AboutDialog::displayUpdate(const QString update_url) {
         ui->updateButton->setText(
             "Click here to download update!");
     } else {
-        ui->updateButton->setText("Toggl Track is up to date");
+        ui->updateButton->setText("Redtick is up to date");
     }
 }
 

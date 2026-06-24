@@ -42,7 +42,7 @@
       </size>
      </property>
      <property name="text">
-      <string>Toggl Track</string>
+      <string>Redtick</string>
      </property>
      <property name="alignment">
       <set>Qt::AlignCenter</set>
@@ -79,7 +79,7 @@
       <string notr="true">color:rgb(220, 220, 220);</string>
      </property>
      <property name="text">
-      <string>Toggl Track is up to date</string>
+      <string>Redtick is up to date</string>
      </property>
     </widget>
    </item>
