@@ -1,0 +1,3 @@
+# Cross-compiled dependency build/output (produced by build-deps-ios.sh)
+.deps-build/
+.deps-prefix/

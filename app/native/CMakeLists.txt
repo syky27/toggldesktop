@@ -96,16 +96,23 @@ set(CORE_SOURCES
     onboarding_service.cpp
 )
 
+# Window-detection / platform-frameworks selection. Mobile (Android, iOS) uses a
+# no-op stub because sandboxing forbids inspecting other apps' windows.
+set(USE_WINDOW_STUB OFF)
 if(ANDROID)
-    # Android has no X11; use the no-op window-detection stub instead of the
-    # Linux/X11 implementation (autotracker window detection is desktop-only).
-    set(ANDROID_STUB "${CMAKE_CURRENT_SOURCE_DIR}/android/get_focused_window_android.cc")
+    set(USE_WINDOW_STUB ON)
 elseif(WIN32)
     list(APPEND CORE_SOURCES get_focused_window_windows.cc)
     set(PLATFORM_LIBS Winhttp Psapi)
 elseif(APPLE)
-    list(APPEND CORE_SOURCES get_focused_window_mac.cc)
-    set(PLATFORM_LIBS "-framework Foundation" "-framework CFNetwork" "-framework AppKit")
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        # iOS: no AppKit; use the stub. Foundation/CFNetwork only.
+        set(USE_WINDOW_STUB ON)
+        set(PLATFORM_LIBS "-framework Foundation" "-framework CFNetwork")
+    else() # macOS desktop
+        list(APPEND CORE_SOURCES get_focused_window_mac.cc)
+        set(PLATFORM_LIBS "-framework Foundation" "-framework CFNetwork" "-framework AppKit")
+    endif()
 else() # Linux desktop
     list(APPEND CORE_SOURCES get_focused_window_linux.cc)
 endif()
@@ -116,12 +123,18 @@ list(TRANSFORM CORE_SOURCES PREPEND "${CORE_SRC}/")
 # delivery. Compiled into the same library so rt_* symbols ship alongside toggl_*.
 list(APPEND CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/bridge.c")
 
-# Android window-detection stub (absolute path, added after the prepend).
-if(ANDROID AND DEFINED ANDROID_STUB)
-    list(APPEND CORE_SOURCES "${ANDROID_STUB}")
+# Mobile window-detection stub (absolute path, added after the prepend).
+if(USE_WINDOW_STUB)
+    list(APPEND CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/get_focused_window_stub.cc")
 endif()
 
-add_library(TogglDesktopLibrary SHARED ${CORE_SOURCES})
+# iOS links the core statically into the Runner (DynamicLibrary.process); all
+# other platforms load a shared library (DynamicLibrary.open).
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    add_library(TogglDesktopLibrary STATIC ${CORE_SOURCES})
+else()
+    add_library(TogglDesktopLibrary SHARED ${CORE_SOURCES})
+endif()
 
 target_include_directories(TogglDesktopLibrary PRIVATE
     ${CORE_SRC}

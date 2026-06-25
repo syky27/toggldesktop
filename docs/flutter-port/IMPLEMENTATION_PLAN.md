@@ -41,8 +41,17 @@ The port has been implemented and is building. Status by issue (✅ done & verif
   Core adapted for Android (X11 guards, window-detection stub). Local sandbox can't
   run it (NDK host blocked); CI is the build path.
 
-**Follow-up (needs Apple/Windows host or backend):**
-- ⬜ FP-12 iOS xcframework · FP-64 Windows packaging · FP-62/63 store releases (iOS needs a macOS host)
+**macOS + iOS (FP-12) — run in CI on macOS runners:**
+- ✅ `macos-desktop` job: builds the core dylib from Homebrew deps, runs the FFI
+  smoke test on macOS, builds the Flutter macOS app, uploads the `.app`.
+- 🟡 `ios` job: cross-builds deps + the core **static lib** for `iphoneos/arm64`
+  (proves the core + FFI compile for iOS) and builds the unsigned Flutter iOS app.
+  Remaining: link the static core into the Runner (CocoaPod/Xcode) so it loads at
+  runtime — best done on a Mac; see `app/native/ios/README.md`.
+
+**Follow-up (host/backend/store):**
+- ⬜ FP-64 Windows packaging (MSIX) · FP-62/63 Play/App Store releases (signing)
+- ⬜ online POC: login round-trip against a live Redmine backend
 - ⬜ FP-13 (online half) login round-trip against a live Redmine server
 - ⬜ FP-50 tray · FP-51 global shortcuts · FP-53 timeline/autotracker · FP-55 mobile bg sync · FP-30 parity sweep
 
