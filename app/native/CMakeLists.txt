@@ -13,6 +13,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# macOS desktop pulls in an Objective-C++ source (MacOSVersionChecker.mm).
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    enable_language(OBJCXX)
+endif()
+
 # Path to the repo's core sources (this file lives in app/native/).
 get_filename_component(CORE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../src" ABSOLUTE)
 
@@ -33,6 +38,12 @@ if(DEFINED REDTICK_DEPS_PREFIX)
     list(PREPEND CMAKE_PREFIX_PATH "${REDTICK_DEPS_PREFIX}")
     list(PREPEND CMAKE_FIND_ROOT_PATH "${REDTICK_DEPS_PREFIX}")
     set(OPENSSL_ROOT_DIR "${REDTICK_DEPS_PREFIX}")
+    set(OPENSSL_USE_STATIC_LIBS TRUE)
+    # Cross toolchains (NDK / iOS) default find-root-path modes to ONLY, which
+    # would ignore the dep prefix; allow searching it too.
+    set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY BOTH)
+    set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH)
+    set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
 endif()
 
 find_package(Poco CONFIG REQUIRED COMPONENTS Crypto DataSQLite NetSSL Foundation Util Net)
@@ -110,7 +121,9 @@ elseif(APPLE)
         set(USE_WINDOW_STUB ON)
         set(PLATFORM_LIBS "-framework Foundation" "-framework CFNetwork")
     else() # macOS desktop
-        list(APPEND CORE_SOURCES get_focused_window_mac.cc)
+        list(APPEND CORE_SOURCES
+            get_focused_window_mac.cc
+            lib/osx/Kopsik/MacOSVersionChecker.mm) # defines isCatalinaOSX()
         set(PLATFORM_LIBS "-framework Foundation" "-framework CFNetwork" "-framework AppKit")
     endif()
 else() # Linux desktop
