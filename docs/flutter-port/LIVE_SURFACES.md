@@ -9,10 +9,16 @@ done and wired. **iOS Live Activity is implemented (display-only v1).** The
   `LiveTimerInfo` payload (`guid`, `description`, `issueRef`, `project`,
   `startedAt`). Default impl logs; swap real implementations into
   `LiveTimerController.defaultFor()`.
-- **Wired in `lib/src/ui/app.dart`**: a `ref.listen(timerStateProvider, …)`
+- **Wired in `lib/src/ui/app.dart`**: a `ref.listen(runningEntriesProvider, …)`
   calls `start(info)` when a new running entry appears (or the issue changes)
   and `end()` on stop. It deliberately does **not** push every second — both
-  surfaces render their own ticking clock from `startedAt`.
+  surfaces render their own ticking clock from `startedAt`. A stable
+  `_liveSurfaceKey` gates re-pushes to meaningful changes only.
+- **Concurrent tracking (multi_task_settings):** with one timer it shows that
+  entry; with several it shows an aggregate `LiveTimerInfo.aggregate` — title
+  "N timers running", clock counting from the earliest start — through the same
+  App-Group keys, so **no Swift widget changes** are needed. One Live Activity per
+  timer is a possible future enhancement.
 
 ## iOS — Live Activity (ActivityKit + WidgetKit) — DONE (display-only v1)
 Built via the **`live_activities`** package (Dart) + a hand-written SwiftUI

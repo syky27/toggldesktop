@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/idle_settings.dart';
+import '../../state/multi_task_settings.dart';
 import '../../state/providers.dart';
 import '../../state/reminder_settings.dart';
 import '../../state/theme_mode.dart';
@@ -19,6 +20,7 @@ class SettingsScreen extends ConsumerWidget {
     final mode = ref.watch(themeModeProvider);
     final idle = ref.watch(idleSettingsProvider);
     final rem = ref.watch(reminderSettingsProvider);
+    final multi = ref.watch(multiTaskSettingsProvider);
     final cs = Theme.of(context).colorScheme;
     final isDesktop =
         Platform.isMacOS || Platform.isWindows || Platform.isLinux;
@@ -105,6 +107,16 @@ class SettingsScreen extends ConsumerWidget {
               title: 'Default activity',
               subtitle: 'Used for new entries',
               trailing: _ActivityDropdown(),
+            ),
+            _Row(
+              title: 'Track multiple tasks at once',
+              subtitle: 'Run several timers concurrently; they stack on top',
+              trailing: Switch(
+                value: multi.allowConcurrent,
+                onChanged: (v) => ref
+                    .read(multiTaskSettingsProvider.notifier)
+                    .setAllowConcurrent(v),
+              ),
             ),
 
             // --- Idle detection (desktop only; idle input isn't tracked on

@@ -41,12 +41,7 @@ private func laTitle(_ context: Ctx) -> String {
   return "\(issue) · \(project)"
 }
 private func laClock(_ context: Ctx) -> Text {
-  // Bound the range so Text(timerInterval:) reserves only an HH:MM:SS-wide slot
-  // (an open-ended range reserves a giant width and centers the value, leaving a
-  // big gap). 24 h is well past any real tracked session.
-  let start = laStart(context)
-  return Text(timerInterval: start...start.addingTimeInterval(60 * 60 * 24),
-              countsDown: false)
+  Text(timerInterval: laStart(context)...Date.distantFuture, countsDown: false)
 }
 
 private struct HourglassBadge: View {
@@ -82,10 +77,12 @@ private struct LockScreenView: View {
         .foregroundStyle(.white)
         .lineLimit(1)
         .layoutPriority(1) // never squeezed by a long title
+        .frame(minWidth: 96, alignment: .trailing)
+    
     }
     .padding(.vertical, 14)
     .padding(.leading, 16)
-    .padding(.trailing, 12)
+    .padding(.trailing, 8)
   }
 }
 

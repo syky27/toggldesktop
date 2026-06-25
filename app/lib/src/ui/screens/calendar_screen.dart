@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/time_entry.dart';
+import '../../state/multi_task_settings.dart';
 import '../../state/providers.dart';
 import '../theme.dart';
 import '../widgets/entry_bits.dart';
@@ -69,12 +70,15 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               onNew: () async {
                 final issue = await showIssuePicker(context);
                 if (issue == null) return;
+                final allowConcurrent =
+                    ref.read(multiTaskSettingsProvider).allowConcurrent;
                 ref.read(coreServiceProvider).startEntryForIssue(
                       issueId: issue.id,
                       projectId: issue.projectId,
                       subject: issue.subject,
                       projectName: issue.projectName,
                       description: issue.subject,
+                      stopOthers: !allowConcurrent,
                     );
               },
             ),

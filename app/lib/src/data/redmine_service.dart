@@ -118,10 +118,12 @@ class RedmineService {
   final _issues = <int, _Issue>{};
 
   // Completed entries by display-guid (for continue/edit lookups), the recent
-  // list (for a sensible default start), and the single running entry.
+  // list (for a sensible default start), and the running entries. The list is
+  // usually empty or single; it holds more than one only when the user has
+  // opted into concurrent tracking (multi_task_settings).
   final _entriesByGuid = <String, _Entry>{};
   List<_Entry> _recent = const [];
-  _RunningEntry? _running;
+  final List<_RunningEntry> _running = [];
   Timer? _ticker;
   Timer? _poll; // periodic cross-device reconcile (running stop / remote start)
   bool _refreshing = false; // re-entrancy guard for refresh()
@@ -138,6 +140,9 @@ class RedmineService {
   final _timeEntries = StreamController<List<TimeEntry>>.broadcast();
   final _showLoadMore = StreamController<bool>.broadcast();
   final _timerState = StreamController<TimeEntry?>.broadcast();
+  // All running entries (≥0). `_timerState` carries just the primary so the
+  // single-timer surfaces (idle / reminder) stay unchanged.
+  final _runningEntries = StreamController<List<TimeEntry>>.broadcast();
   final _loginState = StreamController<LoginEvent>.broadcast();
   final _errors = StreamController<CoreError>.broadcast();
   final _onlineState = StreamController<int>.broadcast();
@@ -149,10 +154,15 @@ class RedmineService {
   LoginEvent? _lastLogin;
   List<TimeEntry>? _lastTimeEntries;
   TimeEntry? _lastTimer;
+  List<TimeEntry> _lastRunningList = const [];
 
   Stream<List<TimeEntry>> get timeEntries => _timeEntries.stream;
   Stream<bool> get showLoadMore => _showLoadMore.stream;
   Stream<TimeEntry?> get timerState => _timerState.stream;
+
+  /// All currently-running entries (most-recently-started last). Drives the
+  /// stacked top bar; empty when nothing is tracking.
+  Stream<List<TimeEntry>> get runningEntries => _runningEntries.stream;
   Stream<LoginEvent> get loginState => _loginState.stream;
   Stream<CoreError> get errors => _errors.stream;
   Stream<int> get onlineState => _onlineState.stream;
@@ -171,6 +181,19 @@ class RedmineService {
   LoginEvent? get currentLogin => _lastLogin;
   List<TimeEntry>? get currentTimeEntries => _lastTimeEntries;
   TimeEntry? get currentTimer => _lastTimer;
+  List<TimeEntry> get currentRunningEntries => _lastRunningList;
+
+  /// The "primary" running entry = the most recently started one (or null). The
+  /// single-timer surfaces (idle prompt, "not tracking" reminder, Live Activity
+  /// when only one runs) act on this.
+  _RunningEntry? get _primaryRunning {
+    if (_running.isEmpty) return null;
+    var p = _running.first;
+    for (final e in _running) {
+      if (e.start.isAfter(p.start)) p = e;
+    }
+    return p;
+  }
 
   List<Activity> get availableActivities => _activities;
 
@@ -288,8 +311,10 @@ class RedmineService {
     _userId = 0;
     _projects.clear();
     _issues.clear();
+    _running.clear();
     _lastTimeEntries = null;
     _lastTimer = null;
+    _lastRunningList = const [];
     unawaited(_clearPersisted());
     _emitLogin(loggedIn: false, userId: 0);
     return true;
@@ -354,13 +379,16 @@ class RedmineService {
     if (_disposed || _refreshing) return;
     final api = _api;
     if (api == null) return;
-    final r = _running;
-    if (r != null && r.redmineId != null) {
+    // Cheap single-entry GET only for the common single-confirmed-timer case;
+    // with 0 (idle / in-flight start) or >1 running, a full pull is simpler and
+    // also discovers timers started on another device.
+    if (_running.length == 1 && _running.first.redmineId != null) {
+      final r = _running.first;
       try {
         final te = await api.timeEntry(r.redmineId!);
         final mapped = te == null ? null : _mapEntry(te);
         if (mapped == null || !mapped.running) {
-          // Stopped or deleted elsewhere → full reconcile clears _running.
+          // Stopped or deleted elsewhere → full reconcile drops it.
           await refresh(silent: true);
         } else {
           _emit(_onlineState, 0); // confirmed reachable; keep ticking locally
@@ -369,8 +397,7 @@ class RedmineService {
         if (e.kind == RedmineErrorKind.network) _emit(_onlineState, 1);
       }
     } else {
-      // Idle (or a just-started timer with no server id yet): a full pull picks
-      // up a remote start; _reconcileRunning guards an in-flight local start.
+      // _reconcileRunning guards in-flight local starts and merges remote ones.
       await refresh(silent: true);
     }
   }
@@ -458,14 +485,12 @@ class RedmineService {
 
   void _rebuild(List<Map<String, dynamic>> rawEntries) {
     final completed = <_Entry>[];
-    _Entry? discovered; // an open (toggl_stop empty) entry from any device
+    final open = <_Entry>[]; // every open (toggl_stop empty) entry, any device
     for (final rt in rawEntries) {
       final e = _mapEntry(rt);
       if (e == null) continue;
       if (e.running) {
-        if (discovered == null || e.start.isAfter(discovered.start)) {
-          discovered = e;
-        }
+        open.add(e);
       } else {
         completed.add(e);
       }
@@ -477,7 +502,7 @@ class RedmineService {
       ..clear()
       ..addEntries(completed.map((e) => MapEntry(_displayGuid(e), e)));
 
-    _reconcileRunning(discovered);
+    _reconcileRunning(open);
 
     final list = _groupByDay(completed);
     _lastTimeEntries = list;
@@ -485,32 +510,58 @@ class RedmineService {
     _emit(_showLoadMore, false);
   }
 
-  /// Reconcile the server's open entry with any locally-started running entry
-  /// (cross-device source of truth = the entry whose `toggl_stop` is empty).
-  void _reconcileRunning(_Entry? discovered) {
-    if (discovered != null) {
-      final local = _running;
-      if (local == null) {
-        _running = _RunningEntry(
-          guid: discovered.guid.isNotEmpty ? discovered.guid : _uuid(),
-          redmineId: discovered.id,
-          issueId: discovered.tid,
-          projectId: discovered.pid,
-          activityId: discovered.activityId,
-          description: discovered.description,
-          start: discovered.start,
-        );
-      } else if (local.guid == discovered.guid) {
-        // Same entry round-tripped: keep the richer local instance (sub-second
-        // start, in-memory edits) and only fill in the server id.
-        local.redmineId ??= discovered.id;
+  /// Reconcile the server's open entries (those whose `toggl_stop` is empty —
+  /// the cross-device source of truth) with the local running list:
+  ///  • adopt server-open entries we don't hold locally (started elsewhere);
+  ///  • fill the server id onto matching local entries (keeping the richer
+  ///    local instance with its sub-second start / in-memory edits);
+  ///  • drop confirmed local entries the server no longer lists as open
+  ///    (stopped on another device);
+  ///  • keep in-flight local starts (no server id yet) the server hasn't
+  ///    reflected.
+  /// With ≤1 open entry this is exactly the old single-timer behaviour.
+  void _reconcileRunning(List<_Entry> discovered) {
+    // A server entry corresponds to a local one by guid (or by id when the open
+    // row carries no toggl_guid — e.g. started in the Redmine web UI).
+    _Entry? matchFor(_RunningEntry r) {
+      for (final e in discovered) {
+        if ((e.guid.isNotEmpty && e.guid == r.guid) ||
+            (r.redmineId != null && r.redmineId == e.id)) {
+          return e;
+        }
       }
-      // else: a different local running entry wins (don't clobber a fresh start
-      // the server hasn't reflected yet).
-    } else if (_running != null && _running!.redmineId != null) {
-      // Confirmed entry no longer open on the server → stopped elsewhere.
-      _running = null;
+      return null;
     }
+
+    // Adopt open entries with no local counterpart.
+    for (final e in discovered) {
+      final known = _running.any((r) =>
+          (e.guid.isNotEmpty && e.guid == r.guid) ||
+          (r.redmineId != null && r.redmineId == e.id));
+      if (known) continue;
+      _running.add(_RunningEntry(
+        guid: e.guid.isNotEmpty ? e.guid : _uuid(),
+        redmineId: e.id,
+        issueId: e.tid,
+        projectId: e.pid,
+        activityId: e.activityId,
+        description: e.description,
+        start: e.start,
+      ));
+    }
+
+    // Fill ids / drop entries stopped elsewhere; keep in-flight local starts.
+    final toRemove = <_RunningEntry>[];
+    for (final r in _running) {
+      final match = matchFor(r);
+      if (match != null) {
+        r.redmineId ??= match.id;
+      } else if (r.redmineId != null) {
+        toRemove.add(r);
+      }
+    }
+    _running.removeWhere(toRemove.contains);
+
     _emitRunning();
   }
 
@@ -706,7 +757,9 @@ class RedmineService {
   }
 
   /// Continue a past entry: start a new running entry against its issue.
-  bool continueEntry(String guid) {
+  /// [stopOthers] (false when concurrent tracking is enabled) keeps any other
+  /// running timers going instead of stopping them first.
+  bool continueEntry(String guid, {bool stopOthers = true}) {
     final e = _entriesByGuid[guid];
     if (e == null) return false;
     unawaited(_startRunning(
@@ -714,11 +767,14 @@ class RedmineService {
       projectId: e.pid,
       activityId: e.activityId,
       description: e.description,
+      stopOthers: stopOthers,
     ));
     return true;
   }
 
   /// Start a timer against an explicitly-picked issue (from the issue picker).
+  /// [stopOthers] (false when concurrent tracking is enabled) keeps any other
+  /// running timers going instead of stopping them first.
   void startEntryForIssue({
     required int issueId,
     required int projectId,
@@ -726,6 +782,7 @@ class RedmineService {
     String projectName = '',
     String description = '',
     int? activityId,
+    bool stopOthers = true,
   }) {
     if (issueId != 0 && subject.isNotEmpty) {
       _issues[issueId] = _Issue(issueId, subject);
@@ -740,12 +797,35 @@ class RedmineService {
       projectId: projectId,
       activityId: activityId ?? _defaultActivityId,
       description: description,
+      stopOthers: stopOthers,
     ));
   }
 
+  /// Stop the primary (most-recently-started) running entry.
   bool stop() {
     unawaited(_stopRunning());
     return true;
+  }
+
+  /// Stop a specific running entry (the per-card Stop button when several run).
+  bool stopEntry(String guid) {
+    unawaited(_stopRunning(guid: guid));
+    return true;
+  }
+
+  /// Stop every running entry except the most recently started one. Used when
+  /// the user switches concurrent tracking off while several timers run.
+  void collapseRunningToMostRecent() {
+    final keep = _primaryRunning;
+    if (keep == null) return;
+    final others =
+        _running.where((e) => e.guid != keep.guid).map((e) => e.guid).toList();
+    if (others.isEmpty) return;
+    unawaited(() async {
+      for (final g in others) {
+        await _stopRunning(guid: g);
+      }
+    }());
   }
 
   /// Stop the running entry at [stopTime] (idle prompt → discard the idle tail).
@@ -842,19 +922,23 @@ class RedmineService {
   /// Trim the idle tail (stop at [idleStart]) and immediately resume the same
   /// issue with a fresh entry (idle prompt → "Discard & continue").
   void discardIdleAndContinue(DateTime idleStart) {
-    final r = _running;
+    final r = _primaryRunning;
     if (r == null) return;
+    final guid = r.guid;
     final issueId = r.issueId;
     final projectId = r.projectId;
     final activityId = r.activityId;
     final description = r.description;
     unawaited(() async {
-      await _stopRunning(at: idleStart);
+      await _stopRunning(guid: guid, at: idleStart);
+      // Only the trimmed entry is restarted — never disturb other concurrent
+      // timers (idle handling is scoped to the primary entry).
       await _startRunning(
         issueId: issueId,
         projectId: projectId,
         activityId: activityId,
         description: description,
+        stopOthers: false,
       );
     }());
   }
@@ -864,6 +948,7 @@ class RedmineService {
     required int projectId,
     required int activityId,
     required String description,
+    bool stopOthers = true,
   }) async {
     final api = _api;
     if (api == null) return;
@@ -873,7 +958,11 @@ class RedmineService {
           userError: true));
       return;
     }
-    if (_running != null) await _stopRunning();
+    // Single-timer mode (the default): stop whatever is running first. With
+    // concurrent tracking on, the new timer is appended alongside the others.
+    // Only await when something is actually running, so an idle start still
+    // adds the entry synchronously (a stop() right after must see it).
+    if (stopOthers && _running.isNotEmpty) await _stopAllRunning();
 
     final now = DateTime.now();
     final guid = _uuid();
@@ -888,7 +977,7 @@ class RedmineService {
       description: description,
       start: now,
     );
-    _running = entry;
+    _running.add(entry);
     _emitRunning();
 
     // Track the in-flight create so a fast stop can await its id instead of
@@ -909,7 +998,12 @@ class RedmineService {
           cfGuid: _cfGuid,
         )
         .then<int?>((id) {
-      if (_running?.guid == guid) _running!.redmineId = id;
+      for (final e in _running) {
+        if (e.guid == guid) {
+          e.redmineId = id;
+          break;
+        }
+      }
       _emit(_onlineState, 0);
       return id;
     }).catchError((Object e) {
@@ -919,11 +1013,33 @@ class RedmineService {
     await entry.createFuture;
   }
 
-  Future<void> _stopRunning({DateTime? at}) async {
+  /// Stop every running entry (snapshot first — `_stopRunning` mutates the list).
+  Future<void> _stopAllRunning() async {
+    final guids = _running.map((e) => e.guid).toList();
+    for (final g in guids) {
+      await _stopRunning(guid: g);
+    }
+  }
+
+  /// Stop a running entry: the one with [guid], or the primary when [guid] is
+  /// null (the toolbar Stop / idle trim). [at] lets the idle prompt trim the
+  /// idle tail.
+  Future<void> _stopRunning({String? guid, DateTime? at}) async {
     final api = _api;
-    final r = _running;
-    if (api == null || r == null) return;
-    _running = null;
+    if (api == null) return;
+    _RunningEntry? r;
+    if (guid == null) {
+      r = _primaryRunning;
+    } else {
+      for (final e in _running) {
+        if (e.guid == guid) {
+          r = e;
+          break;
+        }
+      }
+    }
+    if (r == null) return;
+    _running.remove(r);
     _emitRunning();
 
     // [at] lets the idle prompt trim the idle tail; clamp to not precede start.
@@ -998,14 +1114,17 @@ class RedmineService {
 
   void _emitRunning() {
     if (_disposed) return;
-    final r = _running;
-    if (r == null) {
-      _lastTimer = null;
-      _emit(_timerState, null);
+    // Oldest first so the most-recently-started (the "primary") is last.
+    final sorted = [..._running]..sort((a, b) => a.start.compareTo(b.start));
+    final list = sorted.map(_runningModel).toList(growable: false);
+    _lastRunningList = list;
+    _emit(_runningEntries, list);
+    // The single-timer view = the primary (most recent), or null when idle.
+    _lastTimer = list.isEmpty ? null : list.last;
+    _emit(_timerState, _lastTimer);
+    if (_running.isEmpty) {
       _stopTicker();
     } else {
-      _lastTimer = _runningModel(r);
-      _emit(_timerState, _lastTimer);
       _startTicker();
     }
   }
@@ -1013,13 +1132,11 @@ class RedmineService {
   void _startTicker() {
     if (_disposed) return;
     _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) {
-      final r = _running;
-      if (r == null) {
+      if (_running.isEmpty) {
         _stopTicker();
         return;
       }
-      _lastTimer = _runningModel(r);
-      _emit(_timerState, _lastTimer);
+      _emitRunning();
     });
   }
 
@@ -1177,13 +1294,14 @@ class RedmineService {
 
   void dispose() {
     _disposed = true;
-    _running = null;
+    _running.clear();
     _stopTicker();
     _stopPoll();
     _api?.dispose();
     _timeEntries.close();
     _showLoadMore.close();
     _timerState.close();
+    _runningEntries.close();
     _loginState.close();
     _errors.close();
     _onlineState.close();

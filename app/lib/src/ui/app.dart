@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/time_entry.dart';
 import '../platform/live_timer.dart';
+import '../state/multi_task_settings.dart';
 import '../state/providers.dart';
 import '../state/theme_mode.dart';
 import 'screens/home_shell.dart';
@@ -30,6 +32,21 @@ class RedtickApp extends ConsumerWidget {
 
 final _liveTimerProvider =
     Provider<LiveTimerController>((ref) => LiveTimerController.defaultFor());
+
+/// A stable signature of the live-surface state so the listener only pushes on a
+/// meaningful change. Empty = nothing running; `one:<guid>` = a single timer;
+/// `agg:<count>:<earliestEpoch>` = several at once.
+String _liveSurfaceKey(List<TimeEntry>? entries) {
+  final list =
+      (entries ?? const <TimeEntry>[]).where((e) => e.isRunning).toList();
+  if (list.isEmpty) return '';
+  if (list.length == 1) return 'one:${list.first.guid}';
+  var earliest = list.first.started;
+  for (final e in list) {
+    if (e.started < earliest) earliest = e.started;
+  }
+  return 'agg:${list.length}:$earliest';
+}
 
 class _AuthGate extends ConsumerWidget {
   const _AuthGate();
@@ -65,18 +82,39 @@ class _AuthGate extends ConsumerWidget {
       }
     });
 
-    // Live surfaces (iOS Live Activity / Android Live Update): start on a new
-    // running entry, end on stop — never per second (the surface ticks itself).
+    // Live surfaces (iOS Live Activity / Android Live Update): one timer shows
+    // that entry; several show an aggregate "N timers running" summary. Keyed so
+    // we only push on a meaningful change (count / which entry / earliest start)
+    // — not every second (the surface ticks itself).
     final live = ref.read(_liveTimerProvider);
-    ref.listen(timerStateProvider, (prev, next) {
-      final running = next.asData?.value;
-      final was = prev?.asData?.value;
-      final isRunning = running != null && running.isRunning;
-      final wasRunning = was != null && was.isRunning;
-      if (isRunning && (!wasRunning || was.guid != running.guid)) {
-        live.start(LiveTimerInfo.fromEntry(running));
-      } else if (!isRunning && wasRunning) {
+    ref.listen(runningEntriesProvider, (prev, next) {
+      final prevKey = _liveSurfaceKey(prev?.asData?.value);
+      final list = (next.asData?.value ?? const <TimeEntry>[])
+          .where((e) => e.isRunning)
+          .toList();
+      if (_liveSurfaceKey(next.asData?.value) == prevKey) return;
+      if (list.isEmpty) {
         live.end();
+      } else if (list.length == 1) {
+        live.start(LiveTimerInfo.fromEntry(list.first));
+      } else {
+        var earliest = list.first.started;
+        for (final e in list) {
+          if (e.started < earliest) earliest = e.started;
+        }
+        live.start(LiveTimerInfo.aggregate(
+          count: list.length,
+          earliestStart:
+              DateTime.fromMillisecondsSinceEpoch(earliest * 1000),
+        ));
+      }
+    });
+
+    // Switching concurrent tracking off while several timers run collapses to
+    // the most recently started one (the rest are stopped).
+    ref.listen(multiTaskSettingsProvider, (prev, next) {
+      if ((prev?.allowConcurrent ?? false) && !next.allowConcurrent) {
+        ref.read(coreServiceProvider).collapseRunningToMostRecent();
       }
     });
 

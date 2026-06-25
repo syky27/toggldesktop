@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/time_entry.dart';
+import '../../state/multi_task_settings.dart';
 import '../../state/providers.dart';
 import '../theme.dart';
 import '../widgets/time_entry_tile.dart';
@@ -55,7 +56,13 @@ class _EntryList extends ConsumerWidget {
     if (e.isHeader) return _DayHeader(entry: e);
     return TimeEntryTile(
       entry: e,
-      onContinue: () => ref.read(coreServiceProvider).continueEntry(e.guid),
+      onContinue: () {
+        final allowConcurrent =
+            ref.read(multiTaskSettingsProvider).allowConcurrent;
+        ref
+            .read(coreServiceProvider)
+            .continueEntry(e.guid, stopOthers: !allowConcurrent);
+      },
       onTap: () => showEntryEditor(context, e),
     );
   }

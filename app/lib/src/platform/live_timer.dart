@@ -62,6 +62,23 @@ class LiveTimerInfo {
           DateTime.fromMillisecondsSinceEpoch(e.started * 1000).toLocal(),
     );
   }
+
+  /// Several timers running at once → one summary surface. The headline goes in
+  /// [issueRef] (the surface's title slot) and the clock counts up from the
+  /// earliest start, so the glance shows total concurrent elapsed. A synthetic
+  /// [guid] keyed by the count makes the surface refresh when timers come/go.
+  static LiveTimerInfo aggregate({
+    required int count,
+    required DateTime earliestStart,
+  }) =>
+      LiveTimerInfo(
+        guid:
+            'aggregate-$count-${earliestStart.millisecondsSinceEpoch ~/ 1000}',
+        description: '',
+        issueRef: '$count timers running',
+        project: '',
+        startedAt: earliestStart.toLocal(),
+      );
 }
 
 class _LoggingLiveTimer implements LiveTimerController {

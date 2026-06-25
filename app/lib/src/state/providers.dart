@@ -26,10 +26,20 @@ final showLoadMoreProvider = StreamProvider<bool>(
   (ref) => ref.watch(coreServiceProvider).showLoadMore,
 );
 
-/// The running entry (or null when stopped).
+/// The running entry (or null when stopped). Carries the primary
+/// (most-recently-started) timer when several run concurrently.
 final timerStateProvider = StreamProvider<TimeEntry?>(
   (ref) => ref.watch(coreServiceProvider).timerState,
 );
+
+/// All currently-running entries (most-recently-started last), driving the
+/// stacked top bar. Empty when nothing is tracking. Replays the last list for
+/// late subscribers (the bar subscribes after startup events).
+final runningEntriesProvider = StreamProvider<List<TimeEntry>>((ref) async* {
+  final core = ref.watch(coreServiceProvider);
+  yield core.currentRunningEntries;
+  yield* core.runningEntries;
+});
 
 /// Login transitions. Seeds the auth gate in the UI.
 final loginStateProvider = StreamProvider<LoginEvent>((ref) async* {
