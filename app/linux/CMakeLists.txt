@@ -57,11 +57,6 @@ pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
-# Build the C++ core (FP-60): produces libTogglDesktopLibrary.so, which the app
-# loads at runtime via dart:ffi (DynamicLibrary.open). Bundled into lib/ below.
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../native" "${CMAKE_BINARY_DIR}/native")
-add_dependencies(${BINARY_NAME} TogglDesktopLibrary)
-
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
@@ -110,12 +105,6 @@ foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endforeach(bundled_library)
-
-# Bundle the C++ core so it sits in lib/ next to the binary (FP-60); the
-# $ORIGIN/lib rpath above lets the loader find it for DynamicLibrary.open.
-install(TARGETS TogglDesktopLibrary
-  LIBRARY DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-  COMPONENT Runtime)
 
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/linux/")

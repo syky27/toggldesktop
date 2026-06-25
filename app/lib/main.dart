@@ -1,29 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'src/native/cacert.dart';
-import 'src/native/core_service.dart';
-import 'src/state/db_path.dart';
+import 'src/data/redmine_service.dart';
 import 'src/state/providers.dart';
 import 'src/ui/app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Resolve a writable DB/log path (FP-25) + CA bundle, then start the C core.
-  final paths = await CorePaths.resolve();
-  final cacertPath = await CaCert.resolve();
-  final core = CoreService.start(
-    appName: 'Redtick',
-    appVersion: '1.0.0',
-    dbPath: paths.dbPath,
-    logPath: paths.logPath,
-    cacertPath: cacertPath,
-  );
+  // Pure-Dart Redmine backend. `create()` restores a persisted session and
+  // auto-logs-in if one exists (the instant-relaunch behaviour). No FFI, no
+  // native library, no SQLite.
+  final service = await RedmineService.create();
 
   runApp(
     ProviderScope(
-      overrides: [coreServiceProvider.overrideWithValue(core)],
+      overrides: [coreServiceProvider.overrideWithValue(service)],
       child: const RedtickApp(),
     ),
   );

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../../models/time_entry.dart';
+import '../theme.dart';
+import 'entry_bits.dart';
 
-/// A single time-entry row (FP-43). Issue-first layout with the description
-/// underneath, the formatted duration trailing, and a continue action — mirrors
-/// the Qt `timeentrycellwidget` (issue-first rows, clickable Redmine links).
+/// A completed time-entry row (design §3.4 `.erow`): project dot, description,
+/// `#issue · project` sub-line, the time range + mono duration, and a continue
+/// (play) action.
 class TimeEntryTile extends StatelessWidget {
   const TimeEntryTile({
     super.key,
@@ -17,47 +19,91 @@ class TimeEntryTile extends StatelessWidget {
   final VoidCallback onContinue;
   final VoidCallback? onTap;
 
-  Color? _dotColor() {
-    final hex = entry.color.replaceAll('#', '');
-    if (hex.length == 6) {
-      final v = int.tryParse(hex, radix: 16);
-      if (v != null) return Color(0xFF000000 | v);
-    }
-    return null;
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).extension<RedtickTokens>()!;
+    final hasSub = entrySubline(entry).isNotEmpty;
+    final range = (entry.startTimeString.isNotEmpty &&
+            entry.endTimeString.isNotEmpty)
+        ? '${entry.startTimeString} – ${entry.endTimeString}'
+        : '';
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+        child: Row(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: ProjectDot(entry.color),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.description.isNotEmpty
+                        ? entry.description
+                        : '(no description)',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (hasSub) ...[
+                    const SizedBox(height: 2),
+                    EntrySubline(entry: entry),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            if (entry.unsynced)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Icon(Icons.cloud_upload_outlined,
+                    size: 15, color: t.faint),
+              ),
+            if (range.isNotEmpty) ...[
+              Text(range,
+                  style: RedtickTheme.mono(fontSize: 12, color: t.faint)),
+              const SizedBox(width: 14),
+            ],
+            Text(entry.duration,
+                style: RedtickTheme.mono(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: cs.onSurface)),
+            const SizedBox(width: 8),
+            _PlayButton(onTap: onContinue),
+          ],
+        ),
+      ),
+    );
   }
+}
+
+class _PlayButton extends StatelessWidget {
+  const _PlayButton({required this.onTap});
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final dot = _dotColor();
-    return ListTile(
-      onTap: onTap,
-      leading: dot == null
-          ? const Icon(Icons.circle_outlined, size: 12)
-          : Icon(Icons.circle, size: 12, color: dot),
-      title: Text(
-        entry.projectLabel.isNotEmpty ? entry.projectLabel : '(no project)',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: entry.description.isEmpty
-          ? null
-          : Text(entry.description,
-              maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (entry.unsynced)
-            const Padding(
-              padding: EdgeInsets.only(right: 8),
-              child: Icon(Icons.sync_problem, size: 16),
-            ),
-          Text(entry.duration),
-          IconButton(
-            icon: const Icon(Icons.play_arrow),
-            tooltip: 'Continue',
-            onPressed: onContinue,
-          ),
-        ],
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).extension<RedtickTokens>()!;
+    return Material(
+      color: Colors.transparent,
+      shape: CircleBorder(side: BorderSide(color: t.hairline)),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(7),
+          child: Icon(Icons.play_arrow, size: 15, color: cs.primary),
+        ),
       ),
     );
   }
