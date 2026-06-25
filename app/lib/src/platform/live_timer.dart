@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 
 import '../models/time_entry.dart';
+import 'live_timer_ios.dart';
 
 /// Drives the platform "live" glance surfaces from the running-timer state
 /// (design §6): an **iOS Live Activity** (ActivityKit / WidgetKit) and an
@@ -24,9 +25,9 @@ abstract class LiveTimerController {
   void end();
 
   factory LiveTimerController.defaultFor() {
-    // Hook real implementations here once their native targets exist:
-    //   if (Platform.isIOS) return IosLiveActivityController();
-    //   if (Platform.isAndroid) return AndroidLiveUpdateController();
+    // iOS Live Activity (ActivityKit). Android Live Update is still deferred —
+    // it falls through to the logging no-op below.
+    if (Platform.isIOS) return IosLiveActivityController();
     return _LoggingLiveTimer();
   }
 }

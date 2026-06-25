@@ -1,9 +1,8 @@
 # Live timer surfaces — iOS Live Activity & Android Live Update
 
 Design §6. These are **glance surfaces while a timer runs**. The Dart side is
-done and wired; the per-platform native pieces remain (they need on-device
-testing and, for iOS, your Apple developer/Xcode setup, so they can't be built
-or verified from the macOS-only dev loop).
+done and wired. **iOS Live Activity is implemented (display-only v1).** The
+**Android** Live Update is still deferred.
 
 ## What's already done (Dart)
 - **`lib/src/platform/live_timer.dart`** — `LiveTimerController` (the seam) +
@@ -15,19 +14,33 @@ or verified from the macOS-only dev loop).
   and `end()` on stop. It deliberately does **not** push every second — both
   surfaces render their own ticking clock from `startedAt`.
 
-## iOS — Live Activity (ActivityKit + WidgetKit)
-Needs a **Widget Extension target** added in Xcode (`ios/`):
-1. Add target *Widget Extension* (e.g. `RedtickLiveActivity`), enable *Live
-   Activities* (`NSSupportsLiveActivities = YES` in both Info.plists).
-2. Define `ActivityAttributes` (static: issue, project, description; dynamic
-   content: `startedAt`) and a SwiftUI lock-screen view + Dynamic Island
-   (compact/expanded/minimal) — hourglass tile, issue, **`Text(timerInterval:)`**
-   for the live clock, a **Stop** button.
-3. Stop = an **App Intent** that deep-links back and calls `core.stop()`.
-4. Bridge from Dart: easiest via the **`live_activities`** package
-   (`start/update/end` with the attributes) → implement `IosLiveActivityController`
-   and return it from `defaultFor()`. Requires iOS 16.1+ (Dynamic Island: iPhone 14 Pro+).
-   Use SF Pro / monospaced digits.
+## iOS — Live Activity (ActivityKit + WidgetKit) — DONE (display-only v1)
+Built via the **`live_activities`** package (Dart) + a hand-written SwiftUI
+Widget Extension (native). Requires iOS **16.1+** (Dynamic Island: iPhone 14 Pro+).
+
+- **Dart:** `lib/src/platform/live_timer_ios.dart` → `IosLiveActivityController`
+  (init App Group `group.cz.syky.redtick`, `createActivity` on start /
+  `endActivity` on stop, replaces the activity on issue-change, gated by
+  `areActivitiesEnabled()`, all best-effort). Returned from
+  `LiveTimerController.defaultFor()` on iOS.
+- **Main app:** `ios/Runner/Info.plist` has `NSSupportsLiveActivities`;
+  `ios/Runner/Runner.entitlements` declares the App Group; `CODE_SIGN_ENTITLEMENTS`
+  is wired into all three Runner build configs.
+- **Widget Extension:** `ios/RedtickLiveActivity/` — `RedtickLiveActivityBundle.swift`
+  (`@main` bundle), `RedtickLiveActivity.swift` (`LiveActivitiesAppAttributes` +
+  `ActivityConfiguration`: brand-red hourglass tile, `#issue · project`,
+  description, and a self-ticking `Text(timerInterval:)` elapsed clock; lock
+  screen + Dynamic Island compact/expanded/minimal). Tap opens the app (no
+  in-widget Stop in v1). `Info.plist` + `RedtickLiveActivity.entitlements` included.
+- **One manual step (per `ios/RedtickLiveActivity/README.md`):** the Widget
+  Extension *target* must be created once in Xcode (File → New → Target → Widget
+  Extension, "Include Live Activity"), then point it at the committed sources and
+  enable the **same App Group** on both the Runner and the extension targets.
+- **Cross-device:** a remote stop (the 30 s poll → `_reconcileRunning`) clears the
+  running entry → `app.dart` fires `live.end()` → the activity ends. No extra work.
+
+*Deferred follow-up:* an in-widget **Stop** button (an App Intent calling
+`core.stop()`, iOS 17+).
 
 ## Android — Live Update (foreground ongoing notification)
 1. A **foreground service** + ongoing notification: `setOngoing(true)` +

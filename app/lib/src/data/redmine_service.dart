@@ -9,6 +9,11 @@ import '../models/time_entry.dart';
 import 'offline_queue.dart';
 import 'redmine_api_client.dart';
 
+/// Persisted-credential keys, shared with the iOS background-reconcile isolate
+/// (`platform/background_reconcile.dart`) so both read the same store.
+const String kRedmineBaseUrlKey = 'redmine_base_url';
+const String kRedmineApiKeyKey = 'redmine_api_key';
+
 /// Pure-Dart Redmine backend — the native replacement for the FFI `CoreService`.
 ///
 /// It deliberately keeps the **same public method/stream surface** the UI and
@@ -40,8 +45,8 @@ class RedmineService {
   //     OS keychain (flutter_secure_storage). Keychain calls are wrapped so a
   //     missing plugin (unit-test VM) or entitlement issue degrades gracefully
   //     (the key just isn't persisted) instead of crashing. ---
-  static const _kBaseUrl = 'redmine_base_url';
-  static const _kApiKey = 'redmine_api_key';
+  static const _kBaseUrl = kRedmineBaseUrlKey;
+  static const _kApiKey = kRedmineApiKeyKey;
   static const _secure = FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );

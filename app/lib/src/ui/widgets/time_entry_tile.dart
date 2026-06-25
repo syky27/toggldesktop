@@ -28,6 +28,13 @@ class TimeEntryTile extends StatelessWidget {
             entry.endTimeString.isNotEmpty)
         ? '${entry.startTimeString} – ${entry.endTimeString}'
         : '';
+    // On a narrow (mobile) layout the range + total compete for width, so stack
+    // the range above the total instead of placing them side by side. Matches
+    // the shell's 720 px breakpoint.
+    final narrow = MediaQuery.sizeOf(context).width < 720;
+    final duration = Text(entry.duration,
+        style: RedtickTheme.mono(
+            fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface));
 
     return InkWell(
       onTap: onTap,
@@ -67,16 +74,27 @@ class TimeEntryTile extends StatelessWidget {
                 child: Icon(Icons.cloud_upload_outlined,
                     size: 15, color: t.faint),
               ),
-            if (range.isNotEmpty) ...[
-              Text(range,
-                  style: RedtickTheme.mono(fontSize: 12, color: t.faint)),
-              const SizedBox(width: 14),
+            if (narrow)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (range.isNotEmpty) ...[
+                    Text(range,
+                        style: RedtickTheme.mono(fontSize: 11, color: t.faint)),
+                    const SizedBox(height: 3),
+                  ],
+                  duration,
+                ],
+              )
+            else ...[
+              if (range.isNotEmpty) ...[
+                Text(range,
+                    style: RedtickTheme.mono(fontSize: 12, color: t.faint)),
+                const SizedBox(width: 14),
+              ],
+              duration,
             ],
-            Text(entry.duration,
-                style: RedtickTheme.mono(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: cs.onSurface)),
             const SizedBox(width: 8),
             _PlayButton(onTap: onContinue),
           ],
