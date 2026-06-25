@@ -54,6 +54,11 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+  # Generates the native cold-start splash (iOS LaunchScreen storyboard +
+  # Android SplashScreen drawables) from the config below. Run
+  # `dart run flutter_native_splash:create` after changing the config/assets.
+  flutter_native_splash: ^2.4.1
+
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
@@ -102,3 +107,27 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Branded cold-start splash (design screen 15, "iOS — branded"): a white
+# hourglass on the brand-red background, intentionally identical in light/dark.
+# Regenerate native assets with `dart run flutter_native_splash:create`.
+flutter_native_splash:
+  # iOS + pre-12 Android: white hourglass on brand red.
+  color: "#A11C1C"
+  image: assets/splash/redtick_splash_glyph_white.png
+  color_dark: "#A11C1C"
+  image_dark: assets/splash/redtick_splash_glyph_white.png
+
+  # Android 12+ SplashScreen API: white masked circle + red hourglass on red bg.
+  android_12:
+    color: "#A11C1C"
+    color_dark: "#A11C1C"
+    icon_background_color: "#FFFFFF"
+    icon_background_color_dark: "#FFFFFF"
+    image: assets/splash/redtick_splash_glyph_red.png
+    image_dark: assets/splash/redtick_splash_glyph_red.png
+
+  android: true
+  ios: true
+  web: false
+  fullscreen: true # hide the status bar during the splash
