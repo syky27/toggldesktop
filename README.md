@@ -7,7 +7,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/backend-Redmine-A11C1C?style=flat" alt="Redmine backend">
   <img src="https://img.shields.io/badge/built%20with-Claude%20Code-D97757?style=flat" alt="Built with Claude Code">
-  <img src="https://img.shields.io/badge/macOS-verified-444?style=flat" alt="macOS verified">
+  <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20iOS%20%7C%20Android-444?style=flat" alt="Platforms">
+  <img src="https://img.shields.io/badge/macOS-verified-2ea44f?style=flat" alt="macOS verified">
   <img src="https://img.shields.io/badge/licence-BSD--3-green" alt="Licence BSD-3">
 </p>
 
@@ -124,6 +125,12 @@ Release builds and packaged installers (Linux AppImage, macOS `.dmg`, Windows
 `setup.exe`) are produced by GitHub Actions in
 [`.github/workflows/`](.github/workflows) — `desktop-ci.yml` on every push/PR and
 `desktop-release.yml` on a `v*` tag.
+
+**Desktop is the only platform with a release pipeline today.** iOS and Android
+build and run locally (`flutter run` / `flutter build` from `app/`), but there is
+no signed CI release for them yet — that work is tracked in
+[#13](https://github.com/syky27/redtick/issues/13) (iOS) and
+[#14](https://github.com/syky27/redtick/issues/14) (Android).
 
 # Credits
 

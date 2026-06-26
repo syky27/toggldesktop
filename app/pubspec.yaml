@@ -1,5 +1,5 @@
 name: redtick
-description: "A new Flutter project."
+description: "Redtick — a Redmine-native time tracker (Toggl Desktop reborn in Flutter)."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
