@@ -18,6 +18,21 @@ const _defaultReleaseRepository = String.fromEnvironment(
 
 const _unset = Object();
 
+/// Result of a manual [ReleaseWatchNotifier.checkForUpdates] call.
+enum UpdateCheckStatus { upToDate, updateAvailable, failed, unsupported }
+
+class UpdateCheckOutcome {
+  const UpdateCheckOutcome(this.status, {this.release});
+
+  /// What the check found.
+  final UpdateCheckStatus status;
+
+  /// The newer release for [UpdateCheckStatus.updateAvailable]; for
+  /// [UpdateCheckStatus.unsupported] (e.g. a `dev` build, whose tag can't be
+  /// compared) the latest release seen, for display only.
+  final ReleaseInfo? release;
+}
+
 class ReleaseWatchMetadata {
   const ReleaseWatchMetadata({
     required this.currentTag,
@@ -135,6 +150,55 @@ class ReleaseWatchNotifier extends Notifier<ReleaseWatchState> {
 
   @visibleForTesting
   Future<void> checkNow() => _loadAndMaybeCheck(force: true);
+
+  /// Force an update check now, bypassing the 24h interval, and report what it
+  /// found. Also updates [state] (and therefore the banner) with the result; on
+  /// a network failure the previously known update is kept so the banner
+  /// doesn't flicker away.
+  Future<UpdateCheckOutcome> checkForUpdates() async {
+    final metadata = ref.read(releaseWatchMetadataProvider);
+    final service = ref.read(releaseWatchServiceProvider);
+
+    if (ReleaseWatchService.latestReleaseUri(metadata.repository) == null) {
+      return const UpdateCheckOutcome(UpdateCheckStatus.failed);
+    }
+
+    _setState(state.copyWith(checking: true));
+    final fetched = await service.fetchLatestRelease(metadata.repository);
+    if (_disposed) return const UpdateCheckOutcome(UpdateCheckStatus.failed);
+
+    final prefs = await SharedPreferences.getInstance();
+    if (_disposed) return const UpdateCheckOutcome(UpdateCheckStatus.failed);
+    final now = ref.read(releaseWatchClockProvider)().toUtc();
+    await prefs.setString(_kLastCheckedAt, now.toIso8601String());
+    if (fetched != null) {
+      await _writeCachedRelease(prefs, fetched);
+    }
+
+    // On success recompute; on failure keep the currently shown update so the
+    // banner doesn't disappear just because one manual check couldn't reach
+    // GitHub.
+    final newLatest = fetched != null
+        ? service.updateFor(currentTag: metadata.currentTag, latest: fetched)
+        : state.latest;
+    _setState(
+      state.copyWith(latest: newLatest, lastCheckedAt: now, checking: false),
+    );
+
+    if (fetched == null) {
+      return const UpdateCheckOutcome(UpdateCheckStatus.failed);
+    }
+    if (newLatest != null) {
+      return UpdateCheckOutcome(
+        UpdateCheckStatus.updateAvailable,
+        release: newLatest,
+      );
+    }
+    if (ReleaseWatchService.parseTagVersion(metadata.currentTag) == null) {
+      return UpdateCheckOutcome(UpdateCheckStatus.unsupported, release: fetched);
+    }
+    return const UpdateCheckOutcome(UpdateCheckStatus.upToDate);
+  }
 
   Future<void> dismiss(String tagName) async {
     final tag = tagName.trim();

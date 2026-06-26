@@ -6,9 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../state/idle_settings.dart';
 import '../../state/multi_task_settings.dart';
 import '../../state/providers.dart';
+import '../../state/release_watch.dart';
 import '../../state/reminder_settings.dart';
 import '../../state/theme_mode.dart';
 import '../theme.dart';
+import '../widgets/release_update_banner.dart';
 
 /// Preferences (design §3.8 / §4): Appearance picker, Redmine account, Tracking.
 class SettingsScreen extends ConsumerWidget {
@@ -169,11 +171,98 @@ class SettingsScreen extends ConsumerWidget {
             ),
             _WeekdayChips(enabled: rem.enabled),
             _TimeWindowRow(enabled: rem.enabled),
+
+            // --- About / updates ---
+            const SizedBox(height: 24),
+            const _SectionHeader('About'),
+            const _AboutVersionRow(),
+            // GitHub releases are desktop installers, so the manual check is
+            // desktop-only (mobile gets the version line but no check button).
+            if (isDesktop) const _CheckForUpdatesRow(),
           ],
         ),
       ),
     );
   }
+}
+
+/// Shows the running version (the release tag — `dev` in local builds) and a
+/// link to the GitHub releases page.
+class _AboutVersionRow extends ConsumerWidget {
+  const _AboutVersionRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final watch = ref.watch(releaseWatchProvider);
+    final tag = watch.currentTag;
+    return _Row(
+      title: 'Version',
+      subtitle: tag == 'dev' ? 'dev (local build)' : tag,
+      trailing: TextButton.icon(
+        onPressed: () => ref.read(releaseLinkLauncherProvider)(
+          Uri.parse('https://github.com/${watch.repository}/releases'),
+        ),
+        icon: const Icon(Icons.open_in_new, size: 16),
+        label: const Text('View releases'),
+      ),
+    );
+  }
+}
+
+/// Desktop-only manual "check for updates" against GitHub. The persistent top
+/// banner still handles the available-update case; this gives explicit feedback
+/// (incl. "you're up to date") without waiting for the 24h auto-check.
+class _CheckForUpdatesRow extends ConsumerWidget {
+  const _CheckForUpdatesRow();
+
+  Future<void> _check(BuildContext context, WidgetRef ref) async {
+    final outcome =
+        await ref.read(releaseWatchProvider.notifier).checkForUpdates();
+    if (!context.mounted) return;
+    final message = switch (outcome.status) {
+      UpdateCheckStatus.updateAvailable =>
+        'Update available: ${outcome.release?.tagName ?? ''}',
+      UpdateCheckStatus.upToDate => "You're on the latest version",
+      UpdateCheckStatus.failed => "Couldn't check for updates — try again",
+      UpdateCheckStatus.unsupported =>
+        'Latest release: ${outcome.release?.tagName ?? '—'}',
+    };
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final watch = ref.watch(releaseWatchProvider);
+    final checking = watch.checking;
+    final lastChecked = watch.lastCheckedAt;
+    return _Row(
+      title: 'Check for updates',
+      subtitle: lastChecked == null
+          ? 'Checks GitHub for a newer release'
+          : 'Last checked ${_relativeTime(lastChecked)}',
+      trailing: OutlinedButton.icon(
+        onPressed: checking ? null : () => _check(context, ref),
+        icon: checking
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.system_update_alt, size: 16),
+        label: Text(checking ? 'Checking…' : 'Check for updates'),
+      ),
+    );
+  }
+}
+
+/// Short relative time for the "last checked" subline.
+String _relativeTime(DateTime time) {
+  final d = DateTime.now().toUtc().difference(time.toUtc());
+  if (d.inMinutes < 1) return 'just now';
+  if (d.inMinutes < 60) return '${d.inMinutes}m ago';
+  if (d.inHours < 24) return '${d.inHours}h ago';
+  return '${d.inDays}d ago';
 }
 
 class _SectionHeader extends StatelessWidget {

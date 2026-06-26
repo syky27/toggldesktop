@@ -165,4 +165,103 @@ void main() {
       );
     });
   });
+
+  group('ReleaseWatchNotifier.checkForUpdates', () {
+    ProviderContainer makeContainer({
+      required String currentTag,
+      required http.Client client,
+    }) {
+      SharedPreferences.setMockInitialValues({});
+      return ProviderContainer(
+        overrides: [
+          releaseWatchMetadataProvider.overrideWithValue(
+            ReleaseWatchMetadata(
+              currentTag: currentTag,
+              repository: 'syky27/redtick',
+            ),
+          ),
+          releaseWatchDesktopProvider.overrideWithValue(true),
+          releaseWatchAutoCheckProvider.overrideWithValue(false),
+          releaseWatchServiceProvider.overrideWithValue(
+            ReleaseWatchService(client: client),
+          ),
+          releaseWatchClockProvider.overrideWithValue(
+            () => DateTime.utc(2026, 6, 26, 12),
+          ),
+        ],
+      );
+    }
+
+    http.Client okClient(String tag) => MockClient(
+          (request) async => http.Response(
+            '{"tag_name":"$tag","html_url":'
+            '"https://github.com/syky27/redtick/releases/tag/$tag"}',
+            200,
+          ),
+        );
+
+    test('updateAvailable for a newer tag', () async {
+      final container = makeContainer(
+        currentTag: 'v1.0.0',
+        client: okClient('v1.0.1'),
+      );
+      addTearDown(container.dispose);
+
+      final outcome = await container
+          .read(releaseWatchProvider.notifier)
+          .checkForUpdates();
+
+      expect(outcome.status, UpdateCheckStatus.updateAvailable);
+      expect(outcome.release?.tagName, 'v1.0.1');
+      expect(
+        container.read(releaseWatchProvider).visibleRelease?.tagName,
+        'v1.0.1',
+      );
+    });
+
+    test('upToDate for an equal tag (no banner)', () async {
+      final container = makeContainer(
+        currentTag: 'v1.2.0',
+        client: okClient('v1.2.0'),
+      );
+      addTearDown(container.dispose);
+
+      final outcome = await container
+          .read(releaseWatchProvider.notifier)
+          .checkForUpdates();
+
+      expect(outcome.status, UpdateCheckStatus.upToDate);
+      expect(container.read(releaseWatchProvider).latest, isNull);
+    });
+
+    test('failed when the request errors, and clears checking', () async {
+      final container = makeContainer(
+        currentTag: 'v1.0.0',
+        client: MockClient((request) async => http.Response('nope', 500)),
+      );
+      addTearDown(container.dispose);
+
+      final outcome = await container
+          .read(releaseWatchProvider.notifier)
+          .checkForUpdates();
+
+      expect(outcome.status, UpdateCheckStatus.failed);
+      expect(container.read(releaseWatchProvider).checking, isFalse);
+    });
+
+    test('unsupported for a dev build (carries the latest seen)', () async {
+      final container = makeContainer(
+        currentTag: 'dev',
+        client: okClient('v1.0.1'),
+      );
+      addTearDown(container.dispose);
+
+      final outcome = await container
+          .read(releaseWatchProvider.notifier)
+          .checkForUpdates();
+
+      expect(outcome.status, UpdateCheckStatus.unsupported);
+      expect(outcome.release?.tagName, 'v1.0.1');
+    });
+  });
 }
