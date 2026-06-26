@@ -1,0 +1,16 @@
+# match stores certs + provisioning profiles encrypted in a SEPARATE PRIVATE repo
+# (the app repo is public). CI consumes them read-only; they are created once
+# locally during bootstrap. See docs/RELEASE_SIGNING.md.
+git_url(ENV["MATCH_GIT_URL"])
+storage_mode("git")
+
+# Default type; lanes override per call (developer_id for macOS, appstore for iOS).
+type("appstore")
+
+app_identifier([
+  "cz.syky.redtick.redtick",                     # main app
+  "cz.syky.redtick.redtick.RedtickLiveActivity", # Live Activity widget extension
+])
+
+# CI never creates or mutates certs/profiles — bootstrap is a one-time local run.
+readonly(true)

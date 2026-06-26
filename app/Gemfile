@@ -1,0 +1,9 @@
+source "https://rubygems.org"
+
+# Code signing / release automation for iOS (TestFlight) and macOS (Developer ID).
+# See docs/RELEASE_SIGNING.md. Commit Gemfile.lock so CI pins the fastlane version.
+gem "fastlane"
+
+# CocoaPods CLI used by the iOS build (`pod install`); kept here so CI resolves a
+# consistent version alongside fastlane.
+gem "cocoapods"

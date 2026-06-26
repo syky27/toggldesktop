@@ -1,0 +1,104 @@
+# iOS release pipeline for the `redtick` Flutter app.
+# On a v* tag (or manual dispatch), build the iOS app + Live Activity extension,
+# sign with App Store provisioning profiles (via fastlane match, read-only), and
+# upload to TestFlight. Shares the same Apple credentials/secrets as the macOS
+# signing in desktop-release.yml. See docs/RELEASE_SIGNING.md.
+#
+# Gated on signing secrets: forks / secret-less runs skip cleanly (iOS can't
+# build for TestFlight without signing). Only maintainer tag pushes / dispatch
+# can trigger a real upload.
+name: ios-release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: 3.44.3
+
+jobs:
+  testflight:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect signing capability
+        id: signing
+        shell: bash
+        run: |
+          if [[ -n "${{ secrets.ASC_KEY_P8_BASE64 }}" && -n "${{ secrets.MATCH_PASSWORD }}" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::iOS signing secrets absent — skipping TestFlight upload."
+          fi
+
+      - name: Compute version + build number
+        id: ver
+        if: steps.signing.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          REF="${GITHUB_REF_NAME}"
+          PUBSPEC_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version:[[:space:]]*//')
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            RAW="${REF#v}"; VERSION="${RAW%%+*}"
+          else
+            VERSION="${PUBSPEC_VERSION%%+*}"
+          fi
+          # TestFlight requires a strictly-increasing build number across uploads;
+          # GITHUB_RUN_NUMBER is monotonic per workflow.
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - uses: ruby/setup-ruby@v1
+        if: steps.signing.outputs.enabled == 'true'
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: app
+
+      - uses: subosito/flutter-action@v2
+        if: steps.signing.outputs.enabled == 'true'
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+        if: steps.signing.outputs.enabled == 'true'
+
+      # Generate the iOS build config (Generated.xcconfig with version/build +
+      # dart-defines) without a full build; fastlane `gym` does the real archive.
+      - name: Configure iOS build
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          flutter build ios --config-only --release \
+            --build-name=${{ steps.ver.outputs.version }} \
+            --build-number=${{ steps.ver.outputs.build }} \
+            --dart-define=REDTICK_RELEASE_TAG=${{ github.ref_name }} \
+            --dart-define=REDTICK_RELEASE_REPOSITORY=${{ github.repository }}
+
+      - name: CocoaPods install
+        if: steps.signing.outputs.enabled == 'true'
+        working-directory: app/ios
+        run: pod install
+
+      - name: Build + upload to TestFlight
+        if: steps.signing.outputs.enabled == 'true'
+        run: bundle exec fastlane ios beta
+        env:
+          CI: "true"
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}

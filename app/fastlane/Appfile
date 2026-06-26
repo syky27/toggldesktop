@@ -1,0 +1,5 @@
+# No secrets here — real values come from CI env (see docs/RELEASE_SIGNING.md).
+app_identifier "cz.syky.redtick.redtick" # main app bundle id
+team_id ENV["APPLE_TEAM_ID"]             # Apple Developer team
+itc_team_id ENV["APPLE_TEAM_ID"]         # App Store Connect team (same here)
+apple_id ENV["FASTLANE_APPLE_ID"]        # optional; API-key auth is primary

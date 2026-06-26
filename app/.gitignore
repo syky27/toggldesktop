@@ -43,3 +43,12 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Code signing / fastlane (never commit certs, keys, or profiles — see
+# docs/RELEASE_SIGNING.md). Certs live in a separate private repo via match.
+**/*.mobileprovision
+**/*.p12
+**/*.cer
+AuthKey_*.p8
+fastlane/report.xml
+fastlane/README.md

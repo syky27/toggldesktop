@@ -99,14 +99,84 @@ jobs:
           ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool --no-appstream \
             "$APPDIR" "redtick-${{ steps.ver.outputs.tag }}-x86_64.AppImage"
 
-      # ---- macOS: .dmg (unsigned) ----
+      # ---- macOS: sign + notarize (gated on signing secrets) ----
+      # When the Developer ID cert secrets are present (maintainer tag runs),
+      # import the cert into an ephemeral keychain, deep-sign with Hardened
+      # Runtime, notarize + staple. Forks / secret-less runs skip this and ship an
+      # UNSIGNED .dmg, exactly as before. macOS does NOT use fastlane match — the
+      # Developer ID cert is supplied directly as a .p12 secret (match can't
+      # reliably manage Developer ID certs). See docs/RELEASE_SIGNING.md.
+      - name: Detect macOS signing capability
+        id: macsign
+        if: matrix.target == 'macos'
+        shell: bash
+        run: |
+          if [[ -n "${{ secrets.MACOS_CERT_P12_BASE64 }}" && -n "${{ secrets.ASC_KEY_P8_BASE64 }}" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::macOS signing secrets absent — producing an UNSIGNED .dmg."
+          fi
+
+      - name: Import Developer ID certificate
+        if: matrix.target == 'macos' && steps.macsign.outputs.enabled == 'true'
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/redtick-signing.keychain-db"
+          CERT="$RUNNER_TEMP/devid.p12"
+          echo -n "$MACOS_CERT_P12_BASE64" | base64 --decode > "$CERT"
+          security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT" -P "$MACOS_CERT_PASSWORD" -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN" -T /usr/bin/codesign
+          # Allow codesign to use the key non-interactively.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$MACOS_KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          # Add our keychain to the search list (preserve the existing login keychain).
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed s/\"//g)
+          security find-identity -v -p codesigning "$KEYCHAIN"
+          rm -f "$CERT"
+
+      # ---- macOS: .dmg (signed + notarized when secrets present, else unsigned) ----
       - name: Package DMG
         if: matrix.target == 'macos'
+        env:
+          SIGN: ${{ steps.macsign.outputs.enabled }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
         run: |
           set -e
           brew install create-dmg
           APP=$(ls -d build/macos/Build/Products/Release/*.app | head -n1)
           DMG="redtick-${{ steps.ver.outputs.tag }}.dmg"
+
+          if [ "$SIGN" = "true" ]; then
+            KEYCHAIN="$RUNNER_TEMP/redtick-signing.keychain-db"
+            IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" \
+              | awk '/Developer ID Application/ {print $2; exit}')
+            ENT="macos/Runner/Release.entitlements"
+            # Inner frameworks/dylibs first (Hardened Runtime via --options runtime), app last.
+            find "$APP/Contents/Frameworks" \( -name "*.framework" -o -name "*.dylib" \) -print0 \
+              | while IFS= read -r -d '' f; do
+                  codesign --force --options runtime --timestamp --sign "$IDENTITY" "$f"
+                done
+            codesign --force --options runtime --timestamp \
+              --entitlements "$ENT" --sign "$IDENTITY" "$APP"
+            codesign --verify --deep --strict --verbose=2 "$APP"
+            # Notarize + staple the app (App Store Connect API key).
+            P8="$RUNNER_TEMP/asc.p8"; echo -n "$ASC_KEY_P8_BASE64" | base64 --decode > "$P8"
+            ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/app.zip"
+            xcrun notarytool submit "$RUNNER_TEMP/app.zip" \
+              --key "$P8" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait
+            xcrun stapler staple "$APP"
+          fi
+
           create-dmg \
             --volname "Redtick" \
             --window-size 540 360 \
@@ -116,6 +186,18 @@ jobs:
             --no-internet-enable \
             "$DMG" "$APP" \
           || hdiutil create -volname "Redtick" -srcfolder "$APP" -ov -format UDZO "$DMG"
+
+          if [ "$SIGN" = "true" ]; then
+            # Notarize + staple the DMG too (offline mount).
+            xcrun notarytool submit "$DMG" \
+              --key "$P8" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait
+            xcrun stapler staple "$DMG"
+            rm -f "$P8"
+          fi
+
+      - name: Clean up signing keychain
+        if: always() && matrix.target == 'macos' && steps.macsign.outputs.enabled == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/redtick-signing.keychain-db" || true
 
       # ---- Windows: Inno Setup installer (unsigned) ----
       - name: Package installer (Inno Setup)
