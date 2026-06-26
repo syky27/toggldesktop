@@ -23,4 +23,9 @@ add_definitions(-DAPPLICATION_ID="${APPLICATION_ID}")
 target_link_libraries(${BINARY_NAME} PRIVATE flutter)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
 
+# Idle detection uses the X11 screen-saver extension (XScreenSaver) as the
+# desktop-agnostic fallback; GNOME Wayland goes through GIO/D-Bus (via GTK).
+pkg_check_modules(XSCRNSAVER REQUIRED IMPORTED_TARGET xscrnsaver x11)
+target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::XSCRNSAVER)
+
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")

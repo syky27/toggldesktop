@@ -1,8 +1,11 @@
 #include "my_application.h"
 
 #include <flutter_linux/flutter_linux.h>
+#include <gio/gio.h>
+#include <string.h>
 #ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
+#include <X11/extensions/scrnsaver.h>
 #endif
 
 #include "flutter/generated_plugin_registrant.h"
@@ -10,9 +13,94 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  FlMethodChannel* idle_channel;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
+
+// Idle detection (design §3.9): report seconds since the last user input so
+// Dart can prompt to keep/discard idle time while a timer runs. Linux has no
+// single idle API, so we pick by display server:
+//   * GNOME (X11 or Wayland) -> org.gnome.Mutter.IdleMonitor.GetIdletime (D-Bus)
+//   * any other X11 desktop  -> XScreenSaverQueryInfo (desktop-agnostic)
+//   * other Wayland sessions -> unsupported (returns 0; the prompt never fires)
+
+// Sets *out_seconds from GNOME's Mutter idle monitor. Returns FALSE when Mutter
+// is absent (non-GNOME) so the caller can fall back to X11.
+static gboolean idle_seconds_from_mutter(double* out_seconds) {
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GDBusConnection) bus =
+      g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
+  if (bus == nullptr) {
+    return FALSE;
+  }
+  g_autoptr(GVariant) reply = g_dbus_connection_call_sync(
+      bus, "org.gnome.Mutter.IdleMonitor", "/org/gnome/Mutter/IdleMonitor/Core",
+      "org.gnome.Mutter.IdleMonitor", "GetIdletime", nullptr,
+      G_VARIANT_TYPE("(t)"), G_DBUS_CALL_FLAGS_NONE, 500, nullptr, &error);
+  if (reply == nullptr) {
+    return FALSE;  // not GNOME: ServiceUnknown returns fast, no hang.
+  }
+  guint64 idle_ms = 0;
+  g_variant_get(reply, "(t)", &idle_ms);
+  *out_seconds = idle_ms / 1000.0;
+  return TRUE;
+}
+
+#ifdef GDK_WINDOWING_X11
+// Sets *out_seconds from the X screen-saver idle counter. Returns FALSE off X11
+// (the WAYLAND_DISPLAY guard avoids XWayland, whose counter is bogus under a
+// Wayland compositor).
+static gboolean idle_seconds_from_x11(double* out_seconds) {
+  if (g_getenv("WAYLAND_DISPLAY") != nullptr) {
+    return FALSE;
+  }
+  Display* display = XOpenDisplay(nullptr);
+  if (display == nullptr) {
+    return FALSE;
+  }
+  gboolean ok = FALSE;
+  int event_base = 0;
+  int error_base = 0;
+  if (XScreenSaverQueryExtension(display, &event_base, &error_base)) {
+    XScreenSaverInfo* info = XScreenSaverAllocInfo();
+    if (info != nullptr &&
+        XScreenSaverQueryInfo(display, DefaultRootWindow(display), info)) {
+      *out_seconds = info->idle / 1000.0;
+      ok = TRUE;
+    }
+    if (info != nullptr) {
+      XFree(info);
+    }
+  }
+  XCloseDisplay(display);
+  return ok;
+}
+#endif
+
+// Handles the `redtick/idle` channel's `idleSeconds` method.
+static void idle_method_call_cb(FlMethodChannel* channel,
+                                FlMethodCall* method_call, gpointer user_data) {
+  (void)channel;
+  (void)user_data;
+  g_autoptr(FlMethodResponse) response = nullptr;
+  if (strcmp(fl_method_call_get_name(method_call), "idleSeconds") == 0) {
+    double seconds = 0.0;
+    if (!idle_seconds_from_mutter(&seconds)) {
+#ifdef GDK_WINDOWING_X11
+      idle_seconds_from_x11(&seconds);
+#endif
+    }
+    g_autoptr(FlValue) result = fl_value_new_float(seconds);
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(result));
+  } else {
+    response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
+  }
+  g_autoptr(GError) error = nullptr;
+  if (!fl_method_call_respond(method_call, response, &error)) {
+    g_warning("Failed to respond to idleSeconds: %s", error->message);
+  }
+}
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
@@ -75,6 +163,15 @@ static void my_application_activate(GApplication* application) {
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
+  // Idle detection channel (design §3.9); see idle_method_call_cb above. Keep a
+  // ref on self so the channel outlives this scope and its handler stays live.
+  g_autoptr(FlStandardMethodCodec) idle_codec = fl_standard_method_codec_new();
+  self->idle_channel = fl_method_channel_new(
+      fl_engine_get_binary_messenger(fl_view_get_engine(view)), "redtick/idle",
+      FL_METHOD_CODEC(idle_codec));
+  fl_method_channel_set_method_call_handler(self->idle_channel,
+                                            idle_method_call_cb, self, nullptr);
+
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
@@ -121,6 +218,7 @@ static void my_application_shutdown(GApplication* application) {
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
+  g_clear_object(&self->idle_channel);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 

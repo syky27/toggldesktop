@@ -36,7 +36,7 @@ What it does today (verified on macOS):
 - **Every entry must be linked to a Redmine issue** — the timer refuses to start without one.
 - **Day calendar view** with draggable blocks: move/resize entries, click an empty slot to create one, click a block to edit. A timer that runs past local midnight is split into one entry per day so Redmine's per-day hours stay correct.
 - **Activity picker** — choose a default activity in Preferences and override it per entry; activities are pulled live from Redmine.
-- **Pause-on-idle**, reminders and Pomodoro carry over from Toggl Desktop. The idle prompt lets you keep or discard idle time.
+- **Pause-on-idle**, reminders and Pomodoro carry over from Toggl Desktop. The idle prompt lets you keep or discard idle time. Idle detection runs on macOS, Windows, and Linux X11 desktops (plus GNOME on Wayland); on other Wayland sessions (e.g. KDE Plasma, sway) the idle prompt stays inactive.
 
 # Built with Claude Code
 
@@ -118,7 +118,7 @@ flutter test                # the full suite under app/test/
 ```
 
 Linux desktop needs the GTK build deps: `clang cmake ninja-build pkg-config
-libgtk-3-dev liblzma-dev`. macOS/Windows just need the standard Flutter desktop
+libgtk-3-dev liblzma-dev libxss-dev libx11-dev`. macOS/Windows just need the standard Flutter desktop
 toolchain (Xcode / Visual Studio "Desktop development with C++").
 
 Release builds and packaged installers (Linux AppImage, macOS `.dmg`, Windows

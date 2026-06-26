@@ -1,5 +1,8 @@
 #include "flutter_window.h"
 
+#include <flutter/method_channel.h>
+#include <flutter/standard_method_codec.h>
+
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
@@ -25,6 +28,33 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+
+  // Idle detection (design §3.9): report seconds since the last user input so
+  // Dart can prompt to keep/discard idle time while a timer runs. The handler is
+  // stateless, so the messenger keeps it alive after this local channel goes out
+  // of scope (same pattern as the macOS Runner).
+  flutter::MethodChannel<> idle_channel(
+      flutter_controller_->engine()->messenger(), "redtick/idle",
+      &flutter::StandardMethodCodec::GetInstance());
+  idle_channel.SetMethodCallHandler(
+      [](const flutter::MethodCall<>& call,
+         std::unique_ptr<flutter::MethodResult<>> result) {
+        if (call.method_name() == "idleSeconds") {
+          LASTINPUTINFO lii{};
+          lii.cbSize = sizeof(LASTINPUTINFO);
+          if (GetLastInputInfo(&lii)) {
+            // Unsigned DWORD subtraction handles GetTickCount's ~49.7-day wrap;
+            // idle spans are short so a single wrap is harmless.
+            double seconds = (GetTickCount() - lii.dwTime) / 1000.0;
+            result->Success(flutter::EncodableValue(seconds));
+          } else {
+            result->Success(flutter::EncodableValue(0.0));
+          }
+        } else {
+          result->NotImplemented();
+        }
+      });
+
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {

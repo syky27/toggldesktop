@@ -8,7 +8,8 @@ import 'package:flutter/services.dart';
 class IdleDetector {
   static const _ch = MethodChannel('redtick/idle');
 
-  static bool get supported => Platform.isMacOS;
+  static bool get supported =>
+      Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
   static Future<double> seconds() async {
     if (!supported) return 0;
