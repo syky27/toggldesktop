@@ -41,14 +41,20 @@ jobs:
         shell: bash
         run: |
           REF="${GITHUB_REF_NAME}"
+          PUBSPEC_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version:[[:space:]]*//')
+          PUBSPEC_BUILD="${PUBSPEC_VERSION#*+}"
+          if [[ "$PUBSPEC_BUILD" == "$PUBSPEC_VERSION" ]]; then PUBSPEC_BUILD="1"; fi
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            TAG="$REF"; VERSION="${REF#v}"
+            TAG="$REF"; RAW_VERSION="${REF#v}"; VERSION="${RAW_VERSION%%+*}"
+            if [[ "$RAW_VERSION" == *+* ]]; then BUILD="${RAW_VERSION#*+}"; else BUILD="${GITHUB_RUN_NUMBER}"; fi
           else
-            VERSION=$(grep '^version:' pubspec.yaml | sed 's/version:[[:space:]]*//' | cut -d'+' -f1)
+            VERSION="${PUBSPEC_VERSION%%+*}"
+            BUILD="$PUBSPEC_BUILD"
             TAG="${REF//\//-}-dev"
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
 
       - name: Install Linux desktop build deps
         if: matrix.target == 'linux'
@@ -67,7 +73,7 @@ jobs:
 
       - run: flutter pub get
       - run: flutter config --enable-${{ matrix.target }}-desktop
-      - run: flutter build ${{ matrix.target }} --release
+      - run: flutter build ${{ matrix.target }} --release --build-name=${{ steps.ver.outputs.version }} --build-number=${{ steps.ver.outputs.build }} --dart-define=REDTICK_RELEASE_TAG=${{ steps.ver.outputs.tag }} --dart-define=REDTICK_RELEASE_REPOSITORY=${{ github.repository }}
         env:
           # permission_handler_windows (transitive via live_activities) includes
           # C++/WinRT's <experimental/coroutine>, rejected as a hard error by the

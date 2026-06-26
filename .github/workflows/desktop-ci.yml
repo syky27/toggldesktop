@@ -101,7 +101,21 @@ jobs:
 
       - run: flutter pub get
       - run: flutter config --enable-${{ matrix.target }}-desktop
-      - run: flutter build ${{ matrix.target }} --release
+
+      - name: Compute build metadata
+        id: ver
+        shell: bash
+        run: |
+          PUBSPEC_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version:[[:space:]]*//')
+          VERSION="${PUBSPEC_VERSION%%+*}"
+          BUILD="${PUBSPEC_VERSION#*+}"
+          if [[ "$BUILD" == "$PUBSPEC_VERSION" ]]; then BUILD="1"; fi
+          SAFE_REF="${GITHUB_REF_NAME//\//-}"
+          echo "tag=${SAFE_REF}-dev" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+
+      - run: flutter build ${{ matrix.target }} --release --build-name=${{ steps.ver.outputs.version }} --build-number=${{ steps.ver.outputs.build }} --dart-define=REDTICK_RELEASE_TAG=${{ steps.ver.outputs.tag }} --dart-define=REDTICK_RELEASE_REPOSITORY=${{ github.repository }}
         env:
           # permission_handler_windows (pulled transitively by live_activities)
           # includes C++/WinRT's <experimental/coroutine>, which the current MSVC

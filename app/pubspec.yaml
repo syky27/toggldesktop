@@ -39,6 +39,7 @@ dependencies:
   path: ^1.9.1
   # Pure-Dart Redmine backend (replaces the FFI core).
   http: ^1.2.0
+  pub_semver: ^2.2.0
   shared_preferences: ^2.3.0
   # Design system (Redtick comp): Manrope + JetBrains Mono. Icons use Material
   # equivalents (the design's documented fallback) — phosphor_flutter 2.x is

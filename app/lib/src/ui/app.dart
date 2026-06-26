@@ -6,12 +6,14 @@ import '../platform/live_timer.dart';
 import '../platform/notifications.dart';
 import '../state/multi_task_settings.dart';
 import '../state/providers.dart';
+import '../state/release_watch.dart';
 import '../state/theme_mode.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 import 'theme.dart';
 import 'widgets/idle_prompt.dart';
 import 'widgets/reminder_watcher.dart';
+import 'widgets/release_update_banner.dart';
 
 /// Root widget. Routes between the login screen and the main shell based on the
 /// core's login state, and wires global error toasts. Implements FP-40 (shell).
@@ -31,15 +33,17 @@ class RedtickApp extends ConsumerWidget {
   }
 }
 
-final _liveTimerProvider =
-    Provider<LiveTimerController>((ref) => LiveTimerController.defaultFor());
+final _liveTimerProvider = Provider<LiveTimerController>(
+  (ref) => LiveTimerController.defaultFor(),
+);
 
 /// A stable signature of the live-surface state so the listener only pushes on a
 /// meaningful change. Empty = nothing running; `one:<guid>` = a single timer;
 /// `agg:<count>:<earliestEpoch>` = several at once.
 String _liveSurfaceKey(List<TimeEntry>? entries) {
-  final list =
-      (entries ?? const <TimeEntry>[]).where((e) => e.isRunning).toList();
+  final list = (entries ?? const <TimeEntry>[])
+      .where((e) => e.isRunning)
+      .toList();
   if (list.isEmpty) return '';
   if (list.length == 1) return 'one:${list.first.guid}';
   var earliest = list.first.started;
@@ -54,19 +58,23 @@ class _AuthGate extends ConsumerWidget {
 
   void _toast(BuildContext context, String message) {
     if (message.isEmpty) return;
-    ScaffoldMessenger.maybeOf(context)
-        ?.showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Deliver a notice as an OS notification (corner banner); fall back to the
   /// in-app banner only when it wasn't delivered (denied / unsupported platform).
-  void _notify(BuildContext context, NotificationPresenter presenter,
-      String title, String body) {
+  void _notify(
+    BuildContext context,
+    NotificationPresenter presenter,
+    String title,
+    String body,
+  ) {
     final messenger = ScaffoldMessenger.maybeOf(context);
     presenter.show(title, body).then((delivered) {
       if (!delivered) {
-        messenger
-            ?.showSnackBar(SnackBar(content: Text('$title $body'.trim())));
+        messenger?.showSnackBar(SnackBar(content: Text('$title $body'.trim())));
       }
     });
   }
@@ -111,11 +119,12 @@ class _AuthGate extends ConsumerWidget {
         for (final e in list) {
           if (e.started < earliest) earliest = e.started;
         }
-        live.start(LiveTimerInfo.aggregate(
-          count: list.length,
-          earliestStart:
-              DateTime.fromMillisecondsSinceEpoch(earliest * 1000),
-        ));
+        live.start(
+          LiveTimerInfo.aggregate(
+            count: list.length,
+            earliestStart: DateTime.fromMillisecondsSinceEpoch(earliest * 1000),
+          ),
+        );
       }
     });
 
@@ -131,7 +140,9 @@ class _AuthGate extends ConsumerWidget {
     return loggedIn
         ? const IdleWatcher(
             child: ReminderWatcher(
-              child: _LifecycleRefresher(child: HomeShell()),
+              child: _LifecycleRefresher(
+                child: ReleaseUpdateBannerHost(child: HomeShell()),
+              ),
             ),
           )
         : const LoginScreen();
@@ -168,6 +179,7 @@ class _LifecycleRefresherState extends ConsumerState<_LifecycleRefresher>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(coreServiceProvider).refresh(silent: true);
+      ref.read(releaseWatchProvider.notifier).refreshIfStale();
     }
   }
 
