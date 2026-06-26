@@ -2,8 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- App Sandbox is intentionally OFF. Idle detection reads system-wide idle
+	     via CGEventSource.secondsSinceLastEventType (see macos/Runner/MainFlutterWindow.swift),
+	     which the sandbox blocks — leaving it on makes the "you've been idle" prompt
+	     never fire in release builds. Redtick ships via GitHub Releases, not the Mac
+	     App Store (which is the only channel that requires the sandbox), so this is
+	     safe. Do NOT re-enable without a sandbox-compatible idle source. Notarization
+	     needs the Hardened Runtime, which is a separate setting and unaffected. -->
 	<key>com.apple.security.app-sandbox</key>
-	<true/>
+	<false/>
 	<key>com.apple.security.network.client</key>
 	<true/>
 </dict>
