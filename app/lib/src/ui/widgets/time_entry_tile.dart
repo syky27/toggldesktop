@@ -96,7 +96,7 @@ class TimeEntryTile extends StatelessWidget {
               duration,
             ],
             const SizedBox(width: 8),
-            _PlayButton(onTap: onContinue),
+            PlayButton(onTap: onContinue),
           ],
         ),
       ),
@@ -104,8 +104,10 @@ class TimeEntryTile extends StatelessWidget {
   }
 }
 
-class _PlayButton extends StatelessWidget {
-  const _PlayButton({required this.onTap});
+/// The circular continue (▶) affordance, shared by the entry tile and the
+/// issue-group header.
+class PlayButton extends StatelessWidget {
+  const PlayButton({super.key, required this.onTap});
   final VoidCallback onTap;
 
   @override
