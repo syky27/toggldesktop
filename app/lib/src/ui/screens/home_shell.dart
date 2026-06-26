@@ -5,6 +5,7 @@ import '../../state/providers.dart';
 import '../theme.dart';
 import '../widgets/redtick_logo.dart';
 import 'calendar_screen.dart';
+import 'reports_screen.dart';
 import 'settings_screen.dart';
 import 'time_entries_screen.dart';
 
@@ -23,12 +24,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   static const _dest = <_Dest>[
     _Dest('Timer', Icons.timer_outlined, Icons.timer),
     _Dest('Calendar', Icons.calendar_today_outlined, Icons.calendar_today),
+    _Dest('Reports', Icons.bar_chart_outlined, Icons.bar_chart),
     _Dest('Settings', Icons.settings_outlined, Icons.settings),
   ];
 
   Widget _page(int i) => switch (i) {
         0 => const TimeEntriesScreen(),
         1 => const CalendarScreen(),
+        2 => const ReportsScreen(),
         _ => const SettingsScreen(),
       };
 
