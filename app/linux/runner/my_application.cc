@@ -14,6 +14,8 @@ struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
   FlMethodChannel* idle_channel;
+  FlMethodChannel* window_channel;  // redtick/window: bring-to-front on idle.
+  GtkWindow* window;                // weak ref to the toplevel for raising.
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
@@ -102,6 +104,35 @@ static void idle_method_call_cb(FlMethodChannel* channel,
   }
 }
 
+// Handles the `redtick/window` channel's `foreground` method: raise our own
+// toplevel so the idle prompt is visible when the user returns. Mirrors
+// idle_method_call_cb.
+static void window_method_call_cb(FlMethodChannel* channel,
+                                  FlMethodCall* method_call, gpointer user_data) {
+  (void)channel;
+  MyApplication* self = MY_APPLICATION(user_data);
+  g_autoptr(FlMethodResponse) response = nullptr;
+  if (strcmp(fl_method_call_get_name(method_call), "foreground") == 0) {
+    gboolean ok = FALSE;
+    if (self->window != nullptr) {
+      gtk_window_deiconify(self->window);
+      // No input-event timestamp here (called from a Dart timer), so use
+      // gtk_window_present(), not present_with_time(): a fabricated stamp can
+      // make some window managers flag "demands attention" instead of raising.
+      gtk_window_present(self->window);
+      ok = TRUE;
+    }
+    g_autoptr(FlValue) result = fl_value_new_bool(ok);
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(result));
+  } else {
+    response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
+  }
+  g_autoptr(GError) error = nullptr;
+  if (!fl_method_call_respond(method_call, response, &error)) {
+    g_warning("Failed to respond to foreground: %s", error->message);
+  }
+}
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
@@ -112,6 +143,7 @@ static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+  self->window = window;  // weak ref for redtick/window bring-to-front.
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu
@@ -172,6 +204,14 @@ static void my_application_activate(GApplication* application) {
   fl_method_channel_set_method_call_handler(self->idle_channel,
                                             idle_method_call_cb, self, nullptr);
 
+  // Window control channel (redtick/window); see window_method_call_cb above.
+  g_autoptr(FlStandardMethodCodec) window_codec = fl_standard_method_codec_new();
+  self->window_channel = fl_method_channel_new(
+      fl_engine_get_binary_messenger(fl_view_get_engine(view)),
+      "redtick/window", FL_METHOD_CODEC(window_codec));
+  fl_method_channel_set_method_call_handler(
+      self->window_channel, window_method_call_cb, self, nullptr);
+
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
@@ -219,6 +259,8 @@ static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   g_clear_object(&self->idle_channel);
+  g_clear_object(&self->window_channel);
+  self->window = nullptr;  // non-owning: just drop the reference.
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 

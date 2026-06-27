@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/time_entry.dart';
 import '../../platform/idle.dart';
 import '../../platform/idle_log.dart';
+import '../../platform/window.dart';
 import '../../state/idle_settings.dart';
 import '../../state/providers.dart';
 import '../theme.dart';
@@ -21,6 +22,40 @@ enum IdleChoice { keep, discardStop, discardContinue, addAsNew }
 const int _idleThresholdOverrideSec =
     int.fromEnvironment('REDTICK_IDLE_THRESHOLD_SEC', defaultValue: 0);
 
+/// Outcome of evaluating one idle sample against the arming latch.
+enum IdleArmingDecision { active, belowThreshold, latched, fire }
+
+/// The "should the idle prompt fire?" latch, extracted from [IdleWatcher] so the
+/// fire/re-arm lifecycle — which had a re-arm bug — is unit-testable without a
+/// widget, the platform channel, or a running timer. Pure logic in the spirit of
+/// `shouldRemind` (reminder_settings.dart).
+class IdleArming {
+  bool _armed = true;
+  bool get armed => _armed;
+
+  /// Evaluate one idle sample, updating the armed latch. Mirrors the original
+  /// inline branches: active re-arm below half threshold, hold below threshold,
+  /// hold while latched, else fire once.
+  IdleArmingDecision evaluate(
+      {required double idleSec, required int thresholdSec}) {
+    if (idleSec < thresholdSec / 2) {
+      _armed = true; // user is active again → re-arm
+      return IdleArmingDecision.active;
+    }
+    if (idleSec < thresholdSec) return IdleArmingDecision.belowThreshold;
+    if (!_armed) return IdleArmingDecision.latched;
+    _armed = false; // consume the latch: fire once per idle episode
+    return IdleArmingDecision.fire;
+  }
+
+  /// Re-arm. Call when detection is off / no timer runs, and — critically — when
+  /// the prompt is dismissed: closing the modal proves the user is back at the
+  /// keyboard (it only closes on a tap, which resets the OS idle clock). Without
+  /// this, re-arming relied on a poll sampling idle<threshold/2 — a window
+  /// narrower than the 20s poll, so the prompt could stop reappearing.
+  void rearm() => _armed = true;
+}
+
 /// Wraps the app shell and, while a timer runs, polls desktop idle time. When
 /// the user has been idle past the threshold it shows the idle prompt once
 /// (re-arming when they become active again). Design §3.9.
@@ -34,7 +69,7 @@ class IdleWatcher extends ConsumerStatefulWidget {
 
 class _IdleWatcherState extends ConsumerState<IdleWatcher> {
   Timer? _timer;
-  bool _armed = true;
+  final IdleArming _arming = IdleArming();
   bool _showing = false;
 
   @override
@@ -62,7 +97,7 @@ class _IdleWatcherState extends ConsumerState<IdleWatcher> {
     }
     final settings = ref.read(idleSettingsProvider);
     if (!settings.enabled) {
-      _armed = true; // detection off → nothing to do (re-arm for when re-enabled)
+      _arming.rearm(); // detection off → nothing to do (re-arm for when re-enabled)
       idleLog('check stop: detection disabled (re-armed)');
       return;
     }
@@ -74,29 +109,32 @@ class _IdleWatcherState extends ConsumerState<IdleWatcher> {
     // a timer runs — the original reason the prompt never fired.
     final running = ref.read(coreServiceProvider).currentTimer;
     if (running == null || !running.isRunning) {
-      _armed = true;
+      _arming.rearm();
       idleLog('check stop: timer not running '
           '(running=${running == null ? "null" : running.isRunning})');
       return;
     }
     final idle = await IdleDetector.seconds();
-    idleLog('check idle=${idle}s threshold=${thresholdSec}s armed=$_armed');
-    if (idle < thresholdSec / 2) {
-      _armed = true; // user is active again → re-arm
+    idleLog('check idle=${idle}s threshold=${thresholdSec}s armed=${_arming.armed}');
+    final decision = _arming.evaluate(idleSec: idle, thresholdSec: thresholdSec);
+    if (decision == IdleArmingDecision.active) {
       idleLog('check re-arm: idle ${idle}s < half ${thresholdSec / 2}s');
       return;
     }
-    if (idle < thresholdSec || !_armed || !mounted) {
+    if (decision != IdleArmingDecision.fire || !mounted) {
       idleLog('check stop: belowThreshold=${idle < thresholdSec} '
-          'armed=$_armed mounted=$mounted');
+          'armed=${_arming.armed} mounted=$mounted');
       return;
     }
 
-    _armed = false;
     _showing = true;
     final idleStart = DateTime.now().subtract(Duration(seconds: idle.round()));
     idleLog('check FIRE: showing prompt, idle=${idle.round()}s '
         'idleStart=$idleStart');
+    // Bring our window to the front so the user notices the prompt on return.
+    // Fire-and-forget: foreground() swallows its own errors, and the prompt is
+    // modal so it shows regardless of whether the raise succeeds.
+    unawaited(AppWindow.foreground());
     // try/finally guarantees _showing resets even if the dialog, issue picker,
     // or a core call throws — otherwise _showing stuck true permanently killed
     // detection.
@@ -130,6 +168,11 @@ class _IdleWatcherState extends ConsumerState<IdleWatcher> {
       idleLog('check prompt error: $e\n$st');
     } finally {
       _showing = false;
+      // Dismissal == the user is back (the modal only closes on a tap, which
+      // resets the OS idle clock). Re-arm so the next idle episode prompts again,
+      // instead of waiting for a poll to catch idle<threshold/2 — a window the
+      // 20s poll routinely misses, which left the prompt stuck after dismissal.
+      _arming.rearm();
     }
   }
 

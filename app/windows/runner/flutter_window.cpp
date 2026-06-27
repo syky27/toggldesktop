@@ -55,6 +55,46 @@ bool FlutterWindow::OnCreate() {
         }
       });
 
+  // Window control (idle bring-to-front): raise our own window so the user sees
+  // the "You've been idle" prompt when they return. Mirrors redtick/idle. Capture
+  // `this` to reach Win32Window::GetHandle(). Windows blocks SetForegroundWindow
+  // from a background process, so we try the pragmatic sequence and fall back to
+  // flashing the taskbar button when the OS refuses the raise.
+  flutter::MethodChannel<> window_channel(
+      flutter_controller_->engine()->messenger(), "redtick/window",
+      &flutter::StandardMethodCodec::GetInstance());
+  window_channel.SetMethodCallHandler(
+      [this](const flutter::MethodCall<>& call,
+             std::unique_ptr<flutter::MethodResult<>> result) {
+        if (call.method_name() == "foreground") {
+          HWND hwnd = GetHandle();
+          if (hwnd == nullptr) {
+            result->Success(flutter::EncodableValue(false));
+            return;
+          }
+          // SW_RESTORE un-minimizes; SW_SHOW just ensures it's visible.
+          if (IsIconic(hwnd)) {
+            ShowWindow(hwnd, SW_RESTORE);
+          } else {
+            ShowWindow(hwnd, SW_SHOW);
+          }
+          BringWindowToTop(hwnd);
+          BOOL raised = SetForegroundWindow(hwnd);
+          if (raised == FALSE) {
+            // OS denied focus theft (we're a background process): flash the
+            // taskbar button so the user notices. The modal prompt is already up.
+            FLASHWINFO fi{};
+            fi.cbSize = sizeof(fi);
+            fi.hwnd = hwnd;
+            fi.dwFlags = FLASHW_ALL | FLASHW_TIMERNOFG;
+            FlashWindowEx(&fi);
+          }
+          result->Success(flutter::EncodableValue(raised != FALSE));
+        } else {
+          result->NotImplemented();
+        }
+      });
+
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {

@@ -34,6 +34,41 @@ class MainFlutterWindow: NSWindow {
       }
     }
 
+    // Window control (idle bring-to-front): raise our own window so the user
+    // sees the "You've been idle" prompt when they return. Mirrors redtick/idle:
+    // a single stateless method kept alive by the messenger. `self` is the
+    // NSWindow (this class subclasses NSWindow).
+    let windowChannel = FlutterMethodChannel(
+      name: "redtick/window",
+      binaryMessenger: flutterViewController.engine.binaryMessenger)
+    windowChannel.setMethodCallHandler { [weak self] call, result in
+      if call.method == "foreground" {
+        guard let self = self else {
+          result(false)
+          return
+        }
+        // Realistic idle case: the app is in the background and possibly
+        // minimized while the user is away.
+        if self.isMiniaturized {
+          self.deminiaturize(nil)
+        }
+        // Steal focus across apps. activate(ignoringOtherApps:) is deprecated in
+        // macOS 14; the zero-arg activate() replaces it. Guard because the
+        // deployment target is 10.15.
+        if #available(macOS 14.0, *) {
+          NSApp.activate()
+        } else {
+          NSApp.activate(ignoringOtherApps: true)
+        }
+        self.makeKeyAndOrderFront(nil)
+        NSLog("[redtick.window] native foreground -> raised")
+        result(true)
+      } else {
+        NSLog("[redtick.window] native unimplemented method: %@", call.method)
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     super.awakeFromNib()
   }
 }
