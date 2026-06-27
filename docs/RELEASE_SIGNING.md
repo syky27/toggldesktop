@@ -68,6 +68,12 @@ A `v*` tag (or `workflow_dispatch`) triggers both workflows:
 - `ios-release.yml` → iOS app + Live Activity extension → TestFlight (build number
   = the workflow run number, which is monotonic).
 
+When you **publish** the resulting draft release, `update-cask.yml` fires on the
+`release: published` event, downloads the macOS `.dmg`, recomputes its sha256, and
+commits the bumped `version` + `sha256` to `Casks/redtick.rb` on `master` — so the
+Homebrew cask tracks releases automatically (no extra secret; it pushes to this same
+repo with `GITHUB_TOKEN`).
+
 ## Verification
 - **macOS**: `codesign --verify --deep --strict --verbose=2 redtick.app`;
   `spctl -a -vvv -t install redtick.app` → *Notarized Developer ID*;

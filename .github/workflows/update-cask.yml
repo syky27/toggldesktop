@@ -1,0 +1,79 @@
+# Keeps Casks/redtick.rb in sync with each published GitHub Release.
+# Fires only when a release is *published* (the maintainer flips the draft created
+# by desktop-release.yml to public), downloads the macOS .dmg, recomputes its
+# sha256, rewrites version + sha256 in the cask, and commits straight to master.
+#
+# Loop-safety: the commit touches only Casks/redtick.rb. desktop-ci.yml is
+# path-filtered to app/** and desktop-release.yml triggers only on v* tags, so
+# neither re-runs. This workflow triggers on `release: published`, never on push,
+# so it cannot retrigger itself. `[skip ci]` is belt-and-braces.
+name: update-cask
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-cask
+  cancel-in-progress: false
+
+jobs:
+  update:
+    # Only react to redtick version tags, never to dev/pre tags or other releases.
+    if: startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Resolve tag / version
+        id: ver
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"        # strip leading v
+          VERSION="${VERSION%%+*}"  # strip any +build suffix
+          echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download published macOS dmg + compute sha256
+        id: sha
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "${{ github.repository }}" \
+            --pattern "redtick-${TAG}.dmg" --output redtick.dmg --clobber
+          echo "sha256=$(shasum -a 256 redtick.dmg | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Rewrite Casks/redtick.rb
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          SHA: ${{ steps.sha.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          sed -i -E "s/^(  version )\"[^\"]*\"/\1\"${VERSION}\"/" Casks/redtick.rb
+          sed -i -E "s/^(  sha256 )\"[^\"]*\"/\1\"${SHA}\"/"      Casks/redtick.rb
+          echo "----- updated cask -----"
+          sed -n '1,3p' Casks/redtick.rb
+
+      - name: Commit & push if changed
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          rm -f redtick.dmg
+          if git diff --quiet -- Casks/redtick.rb; then
+            echo "Cask already up to date for ${VERSION}; nothing to commit."; exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/redtick.rb
+          git commit -m "chore(cask): redtick ${VERSION} [skip ci]"
+          git push origin HEAD:master

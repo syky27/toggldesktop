@@ -17,6 +17,7 @@
   <a href="#built-with-claude-code">Built with Claude Code</a> •
   <a href="#how-it-works">How it works</a> •
   <a href="#redmine-setup-required-custom-fields">Custom fields</a> •
+  <a href="#install">Install</a> •
   <a href="#configure">Configure</a> •
   <a href="#build">Build</a> •
   <a href="#credits">Credits</a>
@@ -95,6 +96,24 @@ To hide them from the time-entry form itself, your only lever is the field's **"
 
 In short: you can scope visibility to the tracking users, but you can't make the fields invisible *and* still readable by the same API key. The practical choice is to leave them visible to the tracking accounts and accept a small amount of clutter on the log-time form.
 
+# Install
+
+## macOS — Homebrew (Apple Silicon)
+
+```bash
+brew tap syky27/redtick https://github.com/syky27/redtick
+brew install --cask redtick
+```
+
+This installs the signed, notarized `redtick.app` from the latest GitHub release.
+Upgrade with `brew upgrade --cask redtick`; remove with `brew uninstall --cask redtick`
+(add `--zap` to also delete app data). **Apple Silicon (arm64) only**, macOS 10.15+. The
+explicit tap URL is required because the repo isn't named `homebrew-redtick`.
+
+Prefer a manual download, or on Windows/Linux? Grab the installer for your platform from the
+[Releases page](https://github.com/syky27/redtick/releases/latest)
+(`redtick-*.dmg`, `redtick-*-setup.exe`, `redtick-*-x86_64.AppImage`).
+
 # Configure
 
 0. **One-time:** make sure the three [time-entry custom fields](#redmine-setup-required-custom-fields) exist on your Redmine instance.
@@ -124,7 +143,10 @@ toolchain (Xcode / Visual Studio "Desktop development with C++").
 Release builds and packaged installers (Linux AppImage, macOS `.dmg`, Windows
 `setup.exe`) are produced by GitHub Actions in
 [`.github/workflows/`](.github/workflows) — `desktop-ci.yml` on every push/PR and
-`desktop-release.yml` on a `v*` tag.
+`desktop-release.yml` on a `v*` tag. The macOS `.dmg` is also installable via
+Homebrew (`brew install --cask redtick`, see [Install](#install)); publishing a
+release auto-updates the [`Casks/redtick.rb`](Casks/redtick.rb) cask via
+`update-cask.yml`.
 
 **Desktop is the only platform with a release pipeline today.** iOS and Android
 build and run locally (`flutter run` / `flutter build` from `app/`), but there is
