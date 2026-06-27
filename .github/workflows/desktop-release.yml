@@ -264,15 +264,15 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           body: |
-            ## Downloads (unsigned)
+            ## Downloads
 
-            - **macOS** — `redtick-*.dmg` (Apple Silicon). First launch is blocked by
-              Gatekeeper: right-click the app → **Open**, or run
-              `xattr -dr com.apple.quarantine /Applications/redtick.app`.
-            - **Windows** — `redtick-*-setup.exe`. SmartScreen may warn for an unknown
-              publisher: **More info → Run anyway**.
+            - **macOS** — `redtick-*.dmg` (Apple Silicon). Signed with a Developer ID
+              and notarized by Apple — it opens normally, no Gatekeeper workaround
+              needed.
+            - **Windows** — `redtick-*-setup.exe`. Not code-signed yet: SmartScreen may
+              warn for an unknown publisher — **More info → Run anyway**.
             - **Linux** — `redtick-*-x86_64.AppImage`. `chmod +x` it and run; requires
               system GTK 3.
 
-            These builds are not code-signed yet. Signing/notarization is a planned
-            follow-up.
+            The macOS build is signed + notarized. Windows and Linux are not
+            code-signed yet.
