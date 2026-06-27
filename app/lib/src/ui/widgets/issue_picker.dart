@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/redmine_service.dart';
 import '../../state/providers.dart';
 import '../theme.dart';
+import 'entry_bits.dart';
 
 /// Opens the issue picker (design §3.7) and returns the chosen issue, or null.
 Future<IssueResult?> showIssuePicker(BuildContext context) {
@@ -151,8 +152,7 @@ class _Row extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final t = Theme.of(context).extension<RedtickTokens>()!;
-    final dot = t.projectColor(issue.projectId);
+    final dot = projectColorForId(issue.projectId);
     return InkWell(
       onTap: () => Navigator.of(context).pop(issue),
       child: Padding(

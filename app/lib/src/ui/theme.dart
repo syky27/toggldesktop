@@ -5,7 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 ///
 /// Build everything theme-agnostic: read colors from `Theme.of(context)` or
 /// `Theme.of(context).extension<RedtickTokens>()!`, never hard-code a hex except
-/// the fixed brand red and the project-dot palette.
+/// the fixed brand red. (Per-project accent colours are derived deterministically
+/// from the project id — see `src/util/project_color.dart`.)
 
 // Brand
 const kBrandRed = Color(0xFFA11C1C); // logo tile / light accent
@@ -14,16 +15,6 @@ const kBrandRedBright = Color(0xFFFF4A3D); // dark-mode accent (glow)
 // Beveled app-icon tile gradient (white hourglass sits on this).
 const kBrandTileTop = Color(0xFFC0302A);
 const kBrandTileBottom = Color(0xFF8C1513);
-
-// Project-dot palette — theme-independent, selected by index.
-const kProjectColors = <Color>[
-  Color(0xFF3B82F6),
-  Color(0xFF16A34A),
-  Color(0xFFF59E0B),
-  Color(0xFF8B5CF6),
-  Color(0xFF0D9488),
-  Color(0xFFEC4899),
-];
 
 /// Bespoke tokens the design uses that M3's [ColorScheme] doesn't cover.
 @immutable
@@ -34,7 +25,6 @@ class RedtickTokens extends ThemeExtension<RedtickTokens> {
     required this.faint,
     required this.accent,
     required this.accentSoft,
-    required this.projectColors,
   });
 
   final Color sidebar;
@@ -42,7 +32,6 @@ class RedtickTokens extends ThemeExtension<RedtickTokens> {
   final Color faint;
   final Color accent;
   final Color accentSoft;
-  final List<Color> projectColors;
 
   /// The beveled brand tile gradient (login logo / rail header / app icon).
   Gradient get brandTile => const RadialGradient(
@@ -52,16 +41,12 @@ class RedtickTokens extends ThemeExtension<RedtickTokens> {
         stops: [0.0, 0.72],
       );
 
-  Color projectColor(int index) =>
-      projectColors[index.abs() % projectColors.length];
-
   static const light = RedtickTokens(
     sidebar: Color(0xFFFBFBFC),
     hairline: Color(0xFFEFF0F3),
     faint: Color(0xFFA0A6B0),
     accent: kBrandRed,
     accentSoft: Color(0xFFFBEBEA),
-    projectColors: kProjectColors,
   );
 
   static const dark = RedtickTokens(
@@ -70,7 +55,6 @@ class RedtickTokens extends ThemeExtension<RedtickTokens> {
     faint: Color(0xFF5E5F68),
     accent: kBrandRedBright,
     accentSoft: Color(0xFF2A1A1B),
-    projectColors: kProjectColors,
   );
 
   @override
@@ -80,7 +64,6 @@ class RedtickTokens extends ThemeExtension<RedtickTokens> {
     Color? faint,
     Color? accent,
     Color? accentSoft,
-    List<Color>? projectColors,
   }) =>
       RedtickTokens(
         sidebar: sidebar ?? this.sidebar,
@@ -88,7 +71,6 @@ class RedtickTokens extends ThemeExtension<RedtickTokens> {
         faint: faint ?? this.faint,
         accent: accent ?? this.accent,
         accentSoft: accentSoft ?? this.accentSoft,
-        projectColors: projectColors ?? this.projectColors,
       );
 
   @override
@@ -100,7 +82,6 @@ class RedtickTokens extends ThemeExtension<RedtickTokens> {
       faint: Color.lerp(faint, other.faint, t)!,
       accent: Color.lerp(accent, other.accent, t)!,
       accentSoft: Color.lerp(accentSoft, other.accentSoft, t)!,
-      projectColors: t < 0.5 ? projectColors : other.projectColors,
     );
   }
 }
