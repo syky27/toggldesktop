@@ -1,9 +1,7 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:redtick/src/models/time_entry.dart';
+import 'package:redtick/src/data/redmine_service.dart';
 import 'package:redtick/src/platform/notifications.dart';
 import 'package:redtick/src/state/providers.dart';
 import 'package:redtick/src/state/reminder_notice.dart';
@@ -26,11 +24,17 @@ void main() {
       (tester) async {
     var clock = DateTime(2024, 1, 1, 10, 0, 0); // Monday 10:00
 
+    // No persisted session → not logged in → no running timer, so
+    // core.currentTimer is null. The watcher reads that snapshot directly (a
+    // cold ref.read of timerStateProvider can't see it), so the test drives the
+    // running state through the core, not a provider override. create() touches
+    // platform channels (prefs/keychain), so build it under runAsync.
+    final core = (await tester.runAsync(RedmineService.create))!;
+
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          timerStateProvider
-              .overrideWith((ref) => Stream<TimeEntry?>.value(null)),
+          coreServiceProvider.overrideWithValue(core),
           notificationPresenterProvider.overrideWithValue(_NoopPresenter()),
         ],
         child: MaterialApp(
@@ -43,7 +47,7 @@ void main() {
         ),
       ),
     );
-    await tester.pump(); // settle the timerState stream to data(null)
+    await tester.pump(); // let the first build settle
 
     final container = ProviderScope.containerOf(
         tester.element(find.byType(ReminderWatcher)));

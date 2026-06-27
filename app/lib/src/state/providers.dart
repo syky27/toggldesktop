@@ -28,6 +28,12 @@ final showLoadMoreProvider = StreamProvider<bool>(
 
 /// The running entry (or null when stopped). Carries the primary
 /// (most-recently-started) timer when several run concurrently.
+///
+/// NOTE: this is only useful to widgets that `watch`/`listen` it (it stays warm
+/// then). Imperative pollers that merely `ref.read` it — the idle prompt and the
+/// "not tracking" reminder — must read [RedmineService.currentTimer] directly
+/// instead: a never-watched `StreamProvider` is not kept subscribed, so a cold
+/// `ref.read` returns `AsyncLoading` (null) even while a timer runs.
 final timerStateProvider = StreamProvider<TimeEntry?>(
   (ref) => ref.watch(coreServiceProvider).timerState,
 );
