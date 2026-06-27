@@ -75,8 +75,8 @@ Homebrew cask tracks releases automatically (no extra secret; it pushes to this 
 repo with `GITHUB_TOKEN`).
 
 ## Verification
-- **macOS**: `codesign --verify --deep --strict --verbose=2 redtick.app`;
-  `spctl -a -vvv -t install redtick.app` → *Notarized Developer ID*;
+- **macOS**: `codesign --verify --deep --strict --verbose=2 Redtick.app`;
+  `spctl -a -vvv -t install Redtick.app` → *Notarized Developer ID*;
   `xcrun stapler validate` on the app + dmg; offline launch on a clean Mac.
 - **iOS**: the run logs "Successfully uploaded the new binary to App Store
   Connect"; the build appears in App Store Connect → Redtick → TestFlight.
