@@ -147,30 +147,34 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ],
 
-            // --- Reminders (all platforms) ---
-            const SizedBox(height: 24),
-            const _SectionHeader('Reminders'),
-            _Row(
-              title: 'Remind me to track time',
-              subtitle: 'Notify when no timer is running',
-              trailing: Switch(
-                value: rem.enabled,
-                onChanged: (v) =>
-                    ref.read(reminderSettingsProvider.notifier).setEnabled(v),
+            // --- Reminders (desktop only: a phone keeps the app alive in the
+            // background, so a "you're not tracking" nudge there is just noise;
+            // desktop apps can be fully quit, where the nudge is useful) ---
+            if (isDesktop) ...[
+              const SizedBox(height: 24),
+              const _SectionHeader('Reminders'),
+              _Row(
+                title: 'Remind me to track time',
+                subtitle: 'Notify when no timer is running',
+                trailing: Switch(
+                  value: rem.enabled,
+                  onChanged: (v) =>
+                      ref.read(reminderSettingsProvider.notifier).setEnabled(v),
+                ),
               ),
-            ),
-            _Row(
-              title: 'Remind every',
-              subtitle: 'Minutes between reminders',
-              trailing: _MinutesStepper(
-                value: rem.minutes,
-                enabled: rem.enabled,
-                onChanged: (v) =>
-                    ref.read(reminderSettingsProvider.notifier).setMinutes(v),
+              _Row(
+                title: 'Remind every',
+                subtitle: 'Minutes between reminders',
+                trailing: _MinutesStepper(
+                  value: rem.minutes,
+                  enabled: rem.enabled,
+                  onChanged: (v) =>
+                      ref.read(reminderSettingsProvider.notifier).setMinutes(v),
+                ),
               ),
-            ),
-            _WeekdayChips(enabled: rem.enabled),
-            _TimeWindowRow(enabled: rem.enabled),
+              _WeekdayChips(enabled: rem.enabled),
+              _TimeWindowRow(enabled: rem.enabled),
+            ],
 
             // --- About / updates ---
             const SizedBox(height: 24),

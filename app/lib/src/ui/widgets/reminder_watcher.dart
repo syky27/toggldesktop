@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,13 +14,26 @@ import '../../state/reminder_settings.dart';
 /// (interval, weekdays, active-hours window) lives in [shouldRemind]; this
 /// widget just drives the clock and surfaces the notice. Design §3.9 / screen
 /// 10 ("IDLE & REMINDERS").
+///
+/// **Desktop-only.** On iOS/Android the OS keeps the app alive in the
+/// background, so a "you're not tracking" nudge there is just noise; the watcher
+/// stays inert on mobile (still passing [child] through unchanged).
 class ReminderWatcher extends ConsumerStatefulWidget {
-  const ReminderWatcher({super.key, required this.child, this.clock = DateTime.now});
+  const ReminderWatcher({
+    super.key,
+    required this.child,
+    this.clock = DateTime.now,
+    this.isDesktopOverride,
+  });
   final Widget child;
 
   /// Wall-clock, injectable so tests can drive the throttle/idle gating
   /// deterministically (the periodic timer itself is driven by `tester.pump`).
   final DateTime Function() clock;
+
+  /// Test seam for the desktop/mobile decision. Production leaves this null and
+  /// the platform is read from `dart:io` in [initState].
+  final bool? isDesktopOverride;
 
   @override
   ConsumerState<ReminderWatcher> createState() => _ReminderWatcherState();
@@ -43,6 +57,12 @@ class _ReminderWatcherState extends ConsumerState<ReminderWatcher> {
   @override
   void initState() {
     super.initState();
+    final isDesktop = widget.isDesktopOverride ??
+        (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+    // Desktop-only: a phone keeps the app alive in the background, so a
+    // "you're not tracking" notification there is just noise. Desktop apps can
+    // be fully quit, where the nudge is useful. Stay inert on mobile.
+    if (!isDesktop) return;
     _lastReminder = widget.clock();
     // Request OS notification permission up front so the reminder surfaces as a
     // system notification (not just the in-app fallback) when it first fires.

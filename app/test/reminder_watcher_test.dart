@@ -64,4 +64,41 @@ void main() {
     await tester.pump(const Duration(seconds: 30));
     expect(container.read(reminderNoticeProvider).visible, isTrue);
   });
+
+  testWidgets('stays inert on mobile — the reminder is desktop-only',
+      (tester) async {
+    var clock = DateTime(2024, 1, 1, 10, 0, 0); // Monday 10:00
+    final core = (await tester.runAsync(RedmineService.create))!;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          coreServiceProvider.overrideWithValue(core),
+          notificationPresenterProvider.overrideWithValue(_NoopPresenter()),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: ReminderWatcher(
+              clock: () => clock,
+              isDesktopOverride: false, // pretend we're on iOS/Android
+              child: const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final container = ProviderScope.containerOf(
+        tester.element(find.byType(ReminderWatcher)));
+
+    // Push well past the throttle and pump several ticks: on desktop this would
+    // fire after two idle ticks, but on mobile the watcher never starts its
+    // timer, so the banner stays hidden.
+    clock = clock.add(const Duration(minutes: 11));
+    await tester.pump(const Duration(seconds: 30));
+    await tester.pump(const Duration(seconds: 30));
+    await tester.pump(const Duration(seconds: 30));
+    expect(container.read(reminderNoticeProvider).visible, isFalse);
+  });
 }
