@@ -59,7 +59,10 @@ class _ReminderWatcherState extends ConsumerState<ReminderWatcher> {
   Future<void> _tick() async {
     if (!mounted) return;
     final settings = ref.read(reminderSettingsProvider);
-    final running = ref.read(timerStateProvider).asData?.value;
+    // Synchronous snapshot, NOT timerStateProvider: that StreamProvider is never
+    // watched, so a cold ref.read returns AsyncLoading (null) and the reminder
+    // would nag even while a timer runs. Same root cause as the idle prompt.
+    final running = ref.read(coreServiceProvider).currentTimer;
     final isRunning = running != null && running.isRunning;
     final now = widget.clock();
 

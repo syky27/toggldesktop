@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/time_entry.dart';
 import '../../platform/idle.dart';
+import '../../platform/idle_log.dart';
 import '../../state/idle_settings.dart';
 import '../../state/providers.dart';
 import '../theme.dart';
@@ -12,6 +13,13 @@ import 'entry_bits.dart';
 import 'issue_picker.dart';
 
 enum IdleChoice { keep, discardStop, discardContinue, addAsNew }
+
+/// Test-only fast trigger. When `> 0`, overrides the configured idle threshold
+/// (minutes × 60) so the prompt can be reproduced in seconds during a
+/// `flutter run`/release diagnosis (`--dart-define=REDTICK_IDLE_THRESHOLD_SEC=15`).
+/// Default `0` = no override, so the shipped 5-minute default is unchanged.
+const int _idleThresholdOverrideSec =
+    int.fromEnvironment('REDTICK_IDLE_THRESHOLD_SEC', defaultValue: 0);
 
 /// Wraps the app shell and, while a timer runs, polls desktop idle time. When
 /// the user has been idle past the threshold it shows the idle prompt once
@@ -34,6 +42,10 @@ class _IdleWatcherState extends ConsumerState<IdleWatcher> {
     super.initState();
     if (IdleDetector.supported) {
       _timer = Timer.periodic(const Duration(seconds: 20), (_) => _check());
+      idleLog('watcher.init supported=true pollEvery=20s '
+          'thresholdOverrideSec=$_idleThresholdOverrideSec');
+    } else {
+      idleLog('watcher.init NOT supported -> timer not started');
     }
   }
 
@@ -44,53 +56,81 @@ class _IdleWatcherState extends ConsumerState<IdleWatcher> {
   }
 
   Future<void> _check() async {
-    if (_showing || !mounted) return;
+    if (_showing || !mounted) {
+      idleLog('check skip: showing=$_showing mounted=$mounted');
+      return;
+    }
     final settings = ref.read(idleSettingsProvider);
     if (!settings.enabled) {
       _armed = true; // detection off → nothing to do (re-arm for when re-enabled)
+      idleLog('check stop: detection disabled (re-armed)');
       return;
     }
-    final thresholdSec = settings.minutes * 60;
-    final running = ref.read(timerStateProvider).asData?.value;
+    final thresholdSec = _idleThresholdOverrideSec > 0
+        ? _idleThresholdOverrideSec
+        : settings.minutes * 60;
+    // Read the synchronous snapshot, NOT timerStateProvider: that StreamProvider
+    // is never watched, so a cold ref.read returns AsyncLoading (null) even while
+    // a timer runs — the original reason the prompt never fired.
+    final running = ref.read(coreServiceProvider).currentTimer;
     if (running == null || !running.isRunning) {
       _armed = true;
+      idleLog('check stop: timer not running '
+          '(running=${running == null ? "null" : running.isRunning})');
       return;
     }
     final idle = await IdleDetector.seconds();
+    idleLog('check idle=${idle}s threshold=${thresholdSec}s armed=$_armed');
     if (idle < thresholdSec / 2) {
       _armed = true; // user is active again → re-arm
+      idleLog('check re-arm: idle ${idle}s < half ${thresholdSec / 2}s');
       return;
     }
-    if (idle < thresholdSec || !_armed || !mounted) return;
+    if (idle < thresholdSec || !_armed || !mounted) {
+      idleLog('check stop: belowThreshold=${idle < thresholdSec} '
+          'armed=$_armed mounted=$mounted');
+      return;
+    }
 
     _armed = false;
     _showing = true;
     final idleStart = DateTime.now().subtract(Duration(seconds: idle.round()));
-    final choice =
-        await _showIdlePrompt(context, running, idleStart, idle.round() ~/ 60);
-    if (mounted && choice != null) {
-      final core = ref.read(coreServiceProvider);
-      switch (choice) {
-        case IdleChoice.keep:
-          break;
-        case IdleChoice.discardStop:
-          core.stopRunningAt(idleStart);
-        case IdleChoice.discardContinue:
-          core.discardIdleAndContinue(idleStart);
-        case IdleChoice.addAsNew:
-          final issue = await showIssuePicker(context);
-          if (issue != null) {
-            core.logIdleAsNewEntry(
-              idleStart,
-              issueId: issue.id,
-              projectId: issue.projectId,
-              subject: issue.subject,
-              projectName: issue.projectName,
-            );
-          }
+    idleLog('check FIRE: showing prompt, idle=${idle.round()}s '
+        'idleStart=$idleStart');
+    // try/finally guarantees _showing resets even if the dialog, issue picker,
+    // or a core call throws — otherwise _showing stuck true permanently killed
+    // detection.
+    try {
+      final choice = await _showIdlePrompt(
+          context, running, idleStart, idle.round() ~/ 60);
+      idleLog('check prompt closed: choice=$choice');
+      if (mounted && choice != null) {
+        final core = ref.read(coreServiceProvider);
+        switch (choice) {
+          case IdleChoice.keep:
+            break;
+          case IdleChoice.discardStop:
+            core.stopRunningAt(idleStart);
+          case IdleChoice.discardContinue:
+            core.discardIdleAndContinue(idleStart);
+          case IdleChoice.addAsNew:
+            final issue = await showIssuePicker(context);
+            if (issue != null) {
+              core.logIdleAsNewEntry(
+                idleStart,
+                issueId: issue.id,
+                projectId: issue.projectId,
+                subject: issue.subject,
+                projectName: issue.projectName,
+              );
+            }
+        }
       }
+    } catch (e, st) {
+      idleLog('check prompt error: $e\n$st');
+    } finally {
+      _showing = false;
     }
-    _showing = false;
   }
 
   @override
