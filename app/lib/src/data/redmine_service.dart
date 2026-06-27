@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/time_entry.dart';
+import '../util/project_color.dart';
 import 'offline_queue.dart';
 import 'redmine_api_client.dart';
 
@@ -680,7 +681,7 @@ class RedmineService {
       projectLabel: _projectLabel(e.pid),
       taskLabel: _taskLabel(e.tid),
       clientLabel: '',
-      color: project?.color ?? '',
+      color: project?.color ?? projectColorHex(null),
       tags: '',
       billable: false,
       started: startEpoch,
@@ -711,7 +712,7 @@ class RedmineService {
       projectLabel: _projectLabel(r.projectId),
       taskLabel: _taskLabel(r.issueId),
       clientLabel: '',
-      color: project?.color ?? '',
+      color: project?.color ?? projectColorHex(null),
       tags: '',
       billable: false,
       started: startEpoch,
@@ -1428,13 +1429,7 @@ class RedmineService {
     _syncEvents.close();
   }
 
-  String _colorFor(int projectId) {
-    const palette = [
-      '#0b83d9', '#9e5bd9', '#d94182', '#e36a00', '#bf7000',
-      '#2da608', '#06a893', '#c9806b', '#465bb3', '#990099',
-    ];
-    return palette[projectId % palette.length];
-  }
+  String _colorFor(int projectId) => projectColorHex(projectId);
 
   static String? _customField(List<dynamic>? cfs, int id) {
     if (cfs == null) return null;

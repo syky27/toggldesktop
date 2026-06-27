@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/time_entry.dart';
 import '../../state/providers.dart';
+import '../../util/project_color.dart';
 import '../theme.dart';
 
 /// Parse a `#rrggbb` project color to a [Color].
@@ -16,6 +17,9 @@ Color? entryDotColor(String colorHex) {
   }
   return null;
 }
+
+/// The deterministic accent [Color] for a project id (null → neutral grey).
+Color projectColorForId(int? id) => entryDotColor(projectColorHex(id))!;
 
 /// `#4821` from a `#4821: subject` task label.
 String issueRef(TimeEntry e) {
