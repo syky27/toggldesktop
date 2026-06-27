@@ -1,18 +1,20 @@
-# Redtick iOS code signing → TestFlight.
-#   match `appstore` installs the Apple Distribution cert + App Store profiles for
-#   the main app and the Live Activity extension (readonly in CI). Auth uses one
-#   App Store Connect API key (.p8) from a base64 env var.
+# Redtick iOS code signing → TestFlight (direct — no match).
 #
-# macOS Developer ID signing is NOT handled here — it's done directly in
-# .github/workflows/desktop-release.yml from a .p12 secret, because `match`
-# cannot reliably manage Developer ID certificates. See docs/RELEASE_SIGNING.md.
+# The iOS Distribution cert+key is imported into the CI keychain by the workflow
+# (the "Build + upload to TestFlight" step in ios-release.yml) — same approach
+# that works for the macOS Developer ID cert. Here we fetch the existing App
+# Store provisioning profiles via the App Store Connect API key (read-only, no
+# portal changes), force manual signing, archive with gym, and upload.
+#
+# No `match`, no certs repo, no MATCH_* secrets — that path proved too fragile on
+# an Apple account with pre-existing certs.
 
 opt_out_usage
 
 MAIN_APP_ID = "cz.syky.redtick.redtick".freeze
 EXT_APP_ID  = "cz.syky.redtick.redtick.RedtickLiveActivity".freeze
 
-# App Store Connect API key from base64 env (shared by match + TestFlight upload).
+# App Store Connect API key from base64 env (profile download + TestFlight upload).
 def asc_api_key
   app_store_connect_api_key(
     key_id: ENV.fetch("ASC_KEY_ID"),
@@ -23,32 +25,25 @@ def asc_api_key
   )
 end
 
-before_all do
-  setup_ci if ENV["CI"] # ephemeral signing keychain on CI; no-op locally
-end
-
 platform :ios do
-  # Install the Apple Distribution cert + App Store profiles for both bundle ids.
-  lane :certs do
-    match(type: "appstore", app_identifier: [MAIN_APP_ID, EXT_APP_ID],
-          api_key: asc_api_key, readonly: true)
-  end
-
-  # Build the .ipa and upload to TestFlight. Run after, in the workflow:
+  # Build the .ipa and upload to TestFlight. The distribution cert is already in
+  # the keychain (imported by the workflow). Run after, in the workflow:
   #   flutter pub get
-  #   flutter build ios --config-only --release --build-name=<v> --build-number=<n>
+  #   flutter build ios --config-only --release --no-codesign --build-name/number
   #   (cd ios && pod install)
   lane :beta do
     api_key = asc_api_key
-    certs
     team = ENV.fetch("APPLE_TEAM_ID")
 
-    # match exports the installed profile names as env vars.
+    # Download (read-only) the existing App Store profiles for both bundle ids and
+    # install them. sigh exports the profile names as `sigh_<id>_appstore_*` env.
+    get_provisioning_profile(api_key: api_key, app_identifier: MAIN_APP_ID, readonly: true)
+    get_provisioning_profile(api_key: api_key, app_identifier: EXT_APP_ID, readonly: true)
     main_profile = ENV.fetch("sigh_#{MAIN_APP_ID}_appstore_profile-name")
     ext_profile  = ENV.fetch("sigh_#{EXT_APP_ID}_appstore_profile-name")
 
-    # Force manual signing with the match profiles on both targets (keeps the
-    # committed pbxproj team-agnostic — CI mutates it on the throwaway runner).
+    # Force manual signing with those profiles (keeps the committed pbxproj
+    # team-agnostic — CI mutates it on the throwaway runner).
     update_code_signing_settings(
       path: "ios/Runner.xcodeproj", use_automatic_signing: false, team_id: team,
       targets: ["Runner"], bundle_identifier: MAIN_APP_ID,
@@ -70,8 +65,7 @@ platform :ios do
       export_options: {
         signingStyle: "manual",
         teamID: team,
-        # The extension MUST use its own profile (its App Group entitlement), not
-        # the main app's — two entries here.
+        # The extension must use its own profile (its App Group entitlement).
         provisioningProfiles: {
           MAIN_APP_ID => main_profile,
           EXT_APP_ID => ext_profile,

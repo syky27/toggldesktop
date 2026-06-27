@@ -1,8 +1,8 @@
 # iOS release pipeline for the `redtick` Flutter app.
 # On a v* tag (or manual dispatch), build the iOS app + Live Activity extension,
-# sign with App Store provisioning profiles (via fastlane match, read-only), and
-# upload to TestFlight. Shares the same Apple credentials/secrets as the macOS
-# signing in desktop-release.yml. See docs/RELEASE_SIGNING.md.
+# sign directly (Distribution cert imported from a .p12 secret + App Store
+# profiles fetched read-only via the App Store Connect API key — no match), and
+# upload to TestFlight. See docs/RELEASE_SIGNING.md.
 #
 # Gated on signing secrets: forks / secret-less runs skip cleanly (iOS can't
 # build for TestFlight without signing). Only maintainer tag pushes / dispatch
@@ -36,7 +36,7 @@ jobs:
         id: signing
         shell: bash
         run: |
-          if [[ -n "${{ secrets.ASC_KEY_P8_BASE64 }}" && -n "${{ secrets.MATCH_PASSWORD }}" ]]; then
+          if [[ -n "${{ secrets.ASC_KEY_P8_BASE64 }}" && -n "${{ secrets.IOS_DIST_CERT_P12_BASE64 }}" ]]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
@@ -93,15 +93,35 @@ jobs:
         working-directory: app/ios
         run: pod install
 
+      # Import the Distribution cert into an ephemeral keychain, then archive +
+      # upload (one step so the keychain context carries into fastlane/gym).
       - name: Build + upload to TestFlight
         if: steps.signing.outputs.enabled == 'true'
-        run: bundle exec fastlane ios beta
         env:
           CI: "true"
-          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
-          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/redtick-ios.keychain-db"
+          CERT="$RUNNER_TEMP/ios_dist.p12"
+          echo -n "$IOS_DIST_CERT_P12_BASE64" | base64 --decode > "$CERT"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT" -P "$IOS_DIST_CERT_PASSWORD" -A -f pkcs12 \
+            -k "$KEYCHAIN" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          # Make this keychain the default + first in the search list so gym's
+          # xcodebuild finds the Distribution identity (preserve the login keychain).
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed s/\"//g)
+          security default-keychain -s "$KEYCHAIN"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+          rm -f "$CERT"
+          bundle exec fastlane ios beta
