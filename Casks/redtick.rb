@@ -16,7 +16,7 @@ cask "redtick" do
   depends_on macos: :catalina
   depends_on arch: :arm64
 
-  app "redtick.app"
+  app "Redtick.app"
 
   zap trash: [
     "~/Library/Application Support/cz.syky.redtick.redtick",

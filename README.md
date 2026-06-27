@@ -41,7 +41,7 @@ What it does today (verified on macOS):
 
 # Built with Claude Code
 
-This fork was implemented **almost entirely by [Claude Code](https://claude.com/claude-code)** (Anthropic) — the Redmine backend retarget, the removal of Toggl-only cruft, the calendar/issue-picker UI, and this RedTick rebrand. Every commit on this branch is Claude-attributed by design. Treat the code accordingly: it has been built and verified, but it is AI-authored and benefits from review before you rely on it.
+This fork was implemented **almost entirely by [Claude Code](https://claude.com/claude-code)** (Anthropic) — the Redmine backend retarget, the removal of Toggl-only cruft, the calendar/issue-picker UI, and this Redtick rebrand. Every commit on this branch is Claude-attributed by design. Treat the code accordingly: it has been built and verified, but it is AI-authored and benefits from review before you rely on it.
 
 # How it works
 
@@ -106,7 +106,7 @@ brew trust --cask syky27/redtick/redtick   # one-time: Homebrew requires trustin
 brew install --cask redtick
 ```
 
-This installs the signed, notarized `redtick.app` from the latest GitHub release.
+This installs the signed, notarized `Redtick.app` from the latest GitHub release.
 Upgrade with `brew upgrade --cask redtick`; remove with `brew uninstall --cask redtick`
 (add `--zap` to also delete app data). **Apple Silicon (arm64) only**, macOS 10.15+. The
 explicit tap URL is required because the repo isn't named `homebrew-redtick`; the one-time

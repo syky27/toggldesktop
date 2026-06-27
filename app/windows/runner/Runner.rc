@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "cz.syky.redtick" "\0"
-            VALUE "FileDescription", "redtick" "\0"
+            VALUE "FileDescription", "Redtick" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "redtick" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 cz.syky.redtick. All rights reserved." "\0"
             VALUE "OriginalFilename", "redtick.exe" "\0"
-            VALUE "ProductName", "redtick" "\0"
+            VALUE "ProductName", "Redtick" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
