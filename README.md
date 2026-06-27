@@ -102,13 +102,15 @@ In short: you can scope visibility to the tracking users, but you can't make the
 
 ```bash
 brew tap syky27/redtick https://github.com/syky27/redtick
+brew trust --cask syky27/redtick/redtick   # one-time: Homebrew requires trusting third-party taps
 brew install --cask redtick
 ```
 
 This installs the signed, notarized `redtick.app` from the latest GitHub release.
 Upgrade with `brew upgrade --cask redtick`; remove with `brew uninstall --cask redtick`
 (add `--zap` to also delete app data). **Apple Silicon (arm64) only**, macOS 10.15+. The
-explicit tap URL is required because the repo isn't named `homebrew-redtick`.
+explicit tap URL is required because the repo isn't named `homebrew-redtick`; the one-time
+`brew trust` is Homebrew's safeguard for casks served from a third-party tap.
 
 Prefer a manual download, or on Windows/Linux? Grab the installer for your platform from the
 [Releases page](https://github.com/syky27/redtick/releases/latest)
