@@ -1,148 +1,87 @@
 # Release signing & notarization (iOS + macOS)
 
-Two distinct mechanisms (because Developer ID and App Store certs behave differently):
+Both platforms sign **directly** from `.p12` secrets — no fastlane `match`, no
+certificates repo. (match was tried first but proved too fragile on an Apple
+account with pre-existing certs; the history is in git.)
 
-- **iOS → TestFlight** uses **fastlane match** (Apple Distribution cert + App Store
-  provisioning profiles for the app **and** the Live Activity extension), stored
-  encrypted in a **separate private repo**, consumed read-only by CI.
-  Workflow: `ios-release.yml`.
-- **macOS → Developer ID** uses the Developer ID Application cert supplied directly
-  as a **`.p12` secret** (NOT match — `match` cannot reliably create/verify
-  Developer ID certs, the App Store Connect API doesn't list them). The app is
-  deep-signed with Hardened Runtime, notarized, and stapled.
-  Workflow: `desktop-release.yml` (macOS leg).
+- **macOS → Developer ID** (`desktop-release.yml`, macOS leg): the Developer ID
+  Application cert is imported from a `.p12` secret into an ephemeral keychain,
+  the app is deep-signed with the Hardened Runtime (`codesign --options runtime`),
+  then notarized (`notarytool`) and stapled. App Sandbox stays **off** (idle
+  detection needs system-wide `CGEventSource`); notarization is fine with it off.
+- **iOS → TestFlight** (`ios-release.yml`): the Apple Distribution cert is
+  imported from a `.p12` secret the same way; the App Store provisioning profiles
+  for both bundle ids are fetched **read-only** via the App Store Connect API key
+  (`get_provisioning_profile`), then `gym` archives and `upload_to_testflight`
+  uploads. Runs on **macos-26 / Xcode 26** — Apple requires the iOS 26 SDK for
+  uploads (older SDKs are rejected with a 409).
 
-Both notarize/upload with **one App Store Connect API key**. Everything is **gated
-on the signing secrets being present**: until you finish setup, releases keep
-building **unsigned** (macOS) / skip TestFlight (iOS). No CI breakage meanwhile.
+One App Store Connect API key drives notarization, profile fetch, and TestFlight
+upload. Everything is **gated on the signing secrets being present** — forks and
+secret-less runs fall back to unsigned (macOS) / skip (iOS), so the public CI
+surface never needs secrets.
 
-> ⚠️ **NEVER run `fastlane match nuke`.** It revokes **all** match-managed certs and
-> profiles **account-wide** — including your other apps' (e.g. the `cz.ajty.*`
-> profiles). It is not scoped to Redtick. Use only the lanes/commands below.
+## Bundle identifiers
+- main app: `cz.syky.redtick.redtick`
+- Live Activity extension: `cz.syky.redtick.redtick.RedtickLiveActivity`
+- App Group (both targets): `group.cz.syky.redtick`
 
----
+## GitHub repo secrets
 
-## One-time setup (once, on a Mac signed into the Apple account)
-
-### 1. App Store Connect API key  (shared by iOS + macOS)
-App Store Connect → **Users and Access → Integrations → App Store Connect API** →
-create a **Team key**, role **App Manager**. Download `AuthKey_XXXX.p8` (offered
-once). Record the **Key ID** + **Issuer ID**. Note your **Team ID** (Apple
-Developer → Membership).
-
-### 2. macOS Developer ID certificate → `.p12`  (no match)
-You likely already have a **Developer ID Application** cert (an account can hold a
-limited number). Reuse one, or create a new one (Keychain Access CSR →
-developer.apple.com → Certificates → **Developer ID Application**). Then in
-**Keychain Access → My Certificates**, select the *"Developer ID Application: …"*
-cert **and its private key** → right-click → **Export 2 items** → `.p12` with a
-password (→ `MACOS_CERT_PASSWORD`).
-
-### 3. iOS: register identifiers in the Developer portal  (match won't create these)
-- **App Group** `group.cz.syky.redtick` (Identifiers → App Groups).
-- **App IDs**, each with the **App Groups** capability assigned to that group:
-  - `cz.syky.redtick.redtick` (main app)
-  - `cz.syky.redtick.redtick.RedtickLiveActivity` (Live Activity extension)
-- **App Store Connect app record** for `cz.syky.redtick.redtick` (Apps → +).
-
-### 4. iOS: private certs repo + match bootstrap
-Create a **private** repo, e.g. `gh repo create syky27/redtick-certs --private --add-readme`.
-Pick a strong **match passphrase** (`MATCH_PASSWORD`; store it in a password
-manager). Then bootstrap **once** (writable) from `app/`:
-```bash
-cd app
-bundle install                       # also produces Gemfile.lock — commit it
-export MATCH_GIT_URL=https://github.com/syky27/redtick-certs.git
-export MATCH_PASSWORD=…
-export APPLE_TEAM_ID=…                # 10-char Team ID
-export FASTLANE_USER=…                # your Apple ID (interactive 2FA for creation)
-
-bundle exec fastlane match appstore \
-  -a cz.syky.redtick.redtick,cz.syky.redtick.redtick.RedtickLiveActivity \
-  --readonly false
-```
-This creates/stores the Apple Distribution cert + both App Store profiles. CI
-thereafter runs **read-only** and never mutates anything.
-- If it errors *"You already have a current Distribution certificate"* (account at
-  the limit), import your existing one instead of creating a new one:
-  `bundle exec fastlane match import --type appstore` (supply the existing `.cer`
-  + `.p12`), then re-run the `match appstore` line.
-
-### 5. Add the GitHub repo secrets
-`Settings → Secrets and variables → Actions`, or `gh secret set`:
-
-**Shared**
-| Secret | Value |
+| Secret | Contents |
 |---|---|
-| `ASC_KEY_P8_BASE64` | `base64 -i AuthKey_XXXX.p8 \| tr -d '\n'` |
-| `ASC_KEY_ID` | the Key ID |
-| `ASC_ISSUER_ID` | the Issuer ID |
-| `APPLE_TEAM_ID` | 10-char Team ID |
+| `ASC_KEY_P8_BASE64` | base64 of the App Store Connect API key `.p8` |
+| `ASC_KEY_ID` | the API Key ID |
+| `ASC_ISSUER_ID` | the API Issuer ID |
+| `APPLE_TEAM_ID` | 10-char Team ID (`CDMJRT8WJB`) |
+| `MACOS_CERT_P12_BASE64` | base64 of the **Developer ID Application** `.p12` (cert + key) |
+| `MACOS_CERT_PASSWORD` | that `.p12`'s password |
+| `MACOS_KEYCHAIN_PASSWORD` | any random string (ephemeral CI keychain; reused by iOS) |
+| `IOS_DIST_CERT_P12_BASE64` | base64 of the **Apple Distribution** `.p12` (cert + key) |
+| `IOS_DIST_CERT_PASSWORD` | that `.p12`'s password |
 
-**macOS (Developer ID via .p12)**
-| Secret | Value |
-|---|---|
-| `MACOS_CERT_P12_BASE64` | `base64 -i DeveloperID.p12 \| tr -d '\n'` |
-| `MACOS_CERT_PASSWORD` | the `.p12` export password (step 2) |
-| `MACOS_KEYCHAIN_PASSWORD` | any random string (ephemeral CI keychain) |
+Set a base64 secret with, e.g.:
+`gh secret set MACOS_CERT_P12_BASE64 --repo syky27/redtick --body "$(base64 -i DeveloperID.p12 | tr -d '\n')"`
 
-**iOS (match)**
-| Secret | Value |
-|---|---|
-| `MATCH_PASSWORD` | the match passphrase |
-| `MATCH_GIT_URL` | `https://github.com/syky27/redtick-certs.git` |
-| `MATCH_GIT_BASIC_AUTHORIZATION` | `printf 'x-access-token:%s' <PAT> \| base64 \| tr -d '\n'` — a fine-grained PAT, **Contents: Read** on `redtick-certs` only |
-
-`gh` example:
-```bash
-R=syky27/redtick
-gh secret set MACOS_CERT_P12_BASE64 --repo $R --body "$(base64 -i DeveloperID.p12 | tr -d '\n')"
-gh secret set ASC_KEY_P8_BASE64     --repo $R --body "$(base64 -i ~/Downloads/AuthKey_XXXX.p8 | tr -d '\n')"
-gh secret set MACOS_KEYCHAIN_PASSWORD --repo $R --body "$(openssl rand -base64 24)"
-# …and the plain-text ones with --body "<value>"
-```
-
----
+## One-time prerequisites (Apple side)
+1. **App Store Connect API key** (Users and Access → Integrations → App Store
+   Connect API, role App Manager). Download the `.p8` once; record Key ID + Issuer ID.
+2. **App IDs + App Group + ASC app record**: register `cz.syky.redtick.redtick`
+   and `…​.RedtickLiveActivity` with the **App Groups** capability assigned to
+   `group.cz.syky.redtick`; create the App Store Connect app record for the main id.
+3. **Certificates** (export each cert **with its private key** from Keychain
+   Access → My Certificates → *Export 2 items* → `.p12`):
+   - **Developer ID Application** → `MACOS_CERT_P12_BASE64` / `MACOS_CERT_PASSWORD`.
+   - **Apple Distribution** → `IOS_DIST_CERT_P12_BASE64` / `IOS_DIST_CERT_PASSWORD`.
+   `security import` accepts a Keychain-exported (legacy) `.p12` directly.
+4. **App Store provisioning profiles** for both bundle ids must exist on the
+   portal — the iOS lane fetches them read-only and does not create them. They
+   currently exist (named `match AppStore …` from the original setup). **They
+   expire ~yearly**: when that happens, regenerate them (Xcode/portal, or run the
+   iOS lane's `get_provisioning_profile` with `readonly: false` once) — see the
+   maintenance note below.
 
 ## How a release runs
-
-A `v*` tag triggers **both** workflows (`workflow_dispatch` also available):
-- `desktop-release.yml` → macOS app signed (Developer ID, Hardened Runtime),
-  notarized, stapled, packaged into a notarized `.dmg` on the draft Release.
-- `ios-release.yml` → builds the iOS app + extension, uploads to TestFlight
-  (build number = workflow run number, always increasing).
-
----
+A `v*` tag (or `workflow_dispatch`) triggers both workflows:
+- `desktop-release.yml` → macOS (signed+notarized `.dmg`) + Windows + Linux on a
+  draft GitHub Release.
+- `ios-release.yml` → iOS app + Live Activity extension → TestFlight (build number
+  = the workflow run number, which is monotonic).
 
 ## Verification
+- **macOS**: `codesign --verify --deep --strict --verbose=2 redtick.app`;
+  `spctl -a -vvv -t install redtick.app` → *Notarized Developer ID*;
+  `xcrun stapler validate` on the app + dmg; offline launch on a clean Mac.
+- **iOS**: the run logs "Successfully uploaded the new binary to App Store
+  Connect"; the build appears in App Store Connect → Redtick → TestFlight.
 
-**macOS** (on the artifact):
-```bash
-codesign --verify --deep --strict --verbose=2 redtick.app
-codesign -dvvv redtick.app 2>&1 | grep -E 'Authority=Developer ID Application|flags=.*runtime'
-spctl -a -vvv -t install redtick.app        # → accepted, source=Notarized Developer ID
-xcrun stapler validate redtick.app && xcrun stapler validate redtick-*.dmg
-```
-Best real test: download the `.dmg` **in a browser** (so quarantine is applied),
-copy the app to /Applications on a clean Mac, go **offline**, and launch — it must
-open with no Gatekeeper prompt.
-
-**iOS**: the run log shows both profiles installed and the `.appex` signed with the
-**extension's** profile; a new build appears in App Store Connect → Redtick →
-TestFlight (Processing → Ready to Test).
-
----
-
-## Notes & gotchas
-- **Never `fastlane match nuke`** (see the warning above) — account-wide.
-- `match` is **read-only in CI** — only the step-4 bootstrap creates certs.
-- The **Live Activity extension** needs its **own** App Store profile and the same
-  App Group on **both** App IDs; signing it with the main app's profile fails.
-- macOS uses the **Developer ID** cert; the App Sandbox stays **off** (idle
-  detection). Notarization is fine with the sandbox off — it only needs the
-  Hardened Runtime, applied via `--options runtime` at sign time.
-- Developer ID certs are **account-wide and limited** — reuse an existing one if
-  you can rather than creating new ones.
-- Commit the `Gemfile.lock` from your bootstrap `bundle install` to pin fastlane.
-- After the first verified signed macOS release, drop the "unsigned / `xattr -dr
-  com.apple.quarantine`" workaround from the `desktop-release.yml` release notes.
+## Maintenance notes
+- **Certs**: Developer ID and Apple Distribution certs are account-wide and last
+  ~5 years. When one is rotated, re-export the `.p12` and update the secret.
+- **Profiles**: App Store profiles expire ~yearly. The iOS lane uses
+  `get_provisioning_profile(readonly: true)` (it won't regenerate). To renew,
+  temporarily set `readonly: false` in `app/fastlane/Fastfile` and run once (the
+  API key has rights to create profiles), or recreate them in Xcode/the portal.
+- **Xcode/SDK**: Apple periodically bumps the required SDK. If uploads start
+  failing with a 409 "SDK version" error, bump the iOS runner image / Xcode in
+  `ios-release.yml`.
