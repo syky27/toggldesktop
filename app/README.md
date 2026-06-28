@@ -46,6 +46,9 @@ GitHub Actions live in `../.github/workflows/`:
 - **`desktop-ci.yml`** — on every push/PR: `flutter analyze` + `flutter test`, then a
   release-mode build on macOS, Windows, and Linux (uploads a raw bundle as a sanity
   artifact).
+- **`android-ci.yml`** — on every push/PR to `app/**`: builds a **release-mode** APK and
+  **launches it on an emulator**, asserting the app stays alive. Catches release-only
+  startup crashes (e.g. R8 stripping WorkManager) that a plain build misses.
 - **`desktop-release.yml`** — on a `v*` tag (or manual dispatch): builds and packages
   a polished installer per platform — **Linux AppImage**, **macOS `.dmg`** (signed +
   notarized when secrets present), **Windows Inno Setup `.exe`** — and attaches them
