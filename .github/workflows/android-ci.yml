@@ -65,11 +65,12 @@ jobs:
           disable-animations: true
           working-directory: app
           script: |
-            set -uo pipefail
+            # NOTE: android-emulator-runner runs this with dash (/usr/bin/sh),
+            # which has no `set -o pipefail` — keep it POSIX.
             APK=build/app/outputs/flutter-apk/app-release.apk
             PKG=cz.syky.redtick.redtick
             echo "Installing $APK"
-            adb install -r "$APK"
+            adb install -r "$APK" || { echo "::error::adb install failed"; exit 1; }
             adb logcat -c
             adb shell am start -n "$PKG/.MainActivity"
             # Watch ~30s: fail fast on a FATAL EXCEPTION; otherwise require the
