@@ -13,10 +13,14 @@ plugins {
 // "gated on signing secrets" approach. See docs/ANDROID_RELEASE.md.
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
-val hasReleaseSigning = keystorePropertiesFile.exists()
-if (hasReleaseSigning) {
+if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
+// Sign with the upload key only when key.properties is present AND complete; an
+// empty or partial file falls back to the debug key instead of failing the build
+// with "null cannot be cast to non-null type kotlin.String".
+val hasReleaseSigning = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+    .all { (keystoreProperties.getProperty(it) ?: "").isNotBlank() }
 
 android {
     namespace = "cz.syky.redtick.redtick"
@@ -62,10 +66,13 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
-            // R8/shrinking intentionally left off this round (no keep rules
-            // authored yet; Flutter + plugins can break under R8 without them).
-            // Enable in a later hardening pass with isMinifyEnabled +
-            // proguardFiles(getDefaultProguardFile(...), "proguard-rules.pro").
+            // Keep R8/shrinking OFF. AGP 9 minifies the release build by default,
+            // and R8 full mode strips WorkManager's reflectively-instantiated Room
+            // class (androidx.work.impl.WorkDatabase_Impl.<init>), which crashes at
+            // startup via the androidx.startup InitializationProvider. Disable until
+            // a hardening pass adds the necessary keep rules (proguard-rules.pro).
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
