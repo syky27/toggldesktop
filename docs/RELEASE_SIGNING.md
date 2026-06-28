@@ -1,5 +1,8 @@
 # Release signing & notarization (iOS + macOS)
 
+> **Android** signing & release is documented separately in
+> [`ANDROID_RELEASE.md`](ANDROID_RELEASE.md).
+
 Both platforms sign **directly** from `.p12` secrets — no fastlane `match`, no
 certificates repo. (match was tried first but proved too fragile on an Apple
 account with pre-existing certs; the history is in git.)

@@ -273,6 +273,12 @@ jobs:
               warn for an unknown publisher — **More info → Run anyway**.
             - **Linux** — `redtick-*-x86_64.AppImage`. `chmod +x` it and run; requires
               system GTK 3.
+            - **Android** — `redtick-*-arm64-v8a.apk` (most phones; `armeabi-v7a` for
+              older 32-bit devices, `x86_64` for emulators). Sideload: enable "install
+              unknown apps" for your browser/file manager, then open the APK. Not on
+              Google Play yet, so you may see an "unverified developer" prompt. The
+              Android APKs are attached by the separate `android-release` workflow.
 
-            The macOS build is signed + notarized. Windows and Linux are not
-            code-signed yet.
+            The macOS build is signed + notarized. Windows, Linux, and Android APKs
+            are not code-signed by a platform authority yet (the Android APKs are
+            signed with the project upload key, which is enough to install).

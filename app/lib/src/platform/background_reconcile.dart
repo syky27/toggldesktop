@@ -1,6 +1,7 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:live_activities/live_activities.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,6 +9,7 @@ import 'package:workmanager/workmanager.dart';
 
 import '../data/redmine_api_client.dart';
 import '../data/redmine_service.dart' show kRedmineBaseUrlKey, kRedmineApiKeyKey;
+import 'live_timer_android.dart' show kRunningNotificationId;
 
 /// iOS background-task identifier. MUST match `BGTaskSchedulerPermittedIdentifiers`
 /// in `ios/Runner/Info.plist` and the `WorkmanagerPlugin.registerPeriodicTask`
@@ -27,11 +29,12 @@ void backgroundDispatcher() {
 }
 
 /// Best-effort cross-device reconcile from the background: if Redmine shows no
-/// running timer, end any lingering Live Activity. This covers the gap the
-/// foreground 30 s poll can't — a timer stopped on another device while this
-/// phone is locked (the Dart poll is suspended while backgrounded). Never throws.
+/// running timer, end any lingering live surface (iOS Live Activity / Android
+/// ongoing notification). This covers the gap the foreground 30 s poll can't —
+/// a timer stopped on another device while this phone is locked (the Dart poll
+/// is suspended while backgrounded). Never throws.
 Future<void> reconcileLiveActivity() async {
-  if (!Platform.isIOS) return;
+  if (!Platform.isIOS && !Platform.isAndroid) return;
   RedmineApiClient? api;
   try {
     WidgetsFlutterBinding.ensureInitialized();
@@ -45,17 +48,29 @@ Future<void> reconcileLiveActivity() async {
     final entries = await api.recentTimeEntries();
     if (entries.any(_isOpen)) return; // a timer is still running → leave it
 
-    // Nothing running anywhere → make sure no activity is stuck on the lock
-    // screen. endAllActivities is a no-op if none exist.
-    final la = LiveActivities();
-    await la.init(appGroupId: _appGroupId);
-    await la.endAllActivities();
+    // Nothing running anywhere → make sure no live surface is stuck.
+    await _endStaleSurface();
   } catch (_) {
-    // Best-effort; iOS retries on a future window, and a foreground resume
+    // Best-effort; the OS retries on a future window, and a foreground resume
     // refresh is the reliable fallback.
   } finally {
     api?.dispose();
   }
+}
+
+/// Tear down a lingering running-timer surface from the background isolate (the
+/// UI-isolate controller isn't running here, so act on the platform directly).
+Future<void> _endStaleSurface() async {
+  if (Platform.isAndroid) {
+    // Cancel the ongoing notification by its stable id; no-op if absent.
+    await FlutterLocalNotificationsPlugin().cancel(id: kRunningNotificationId);
+    return;
+  }
+  // iOS: end the Live Activity via the shared App Group. endAllActivities is a
+  // no-op if none exist.
+  final la = LiveActivities();
+  await la.init(appGroupId: _appGroupId);
+  await la.endAllActivities();
 }
 
 Future<String> _readApiKey(SharedPreferences prefs) async {

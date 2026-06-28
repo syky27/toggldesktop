@@ -101,6 +101,16 @@ class _LocalNotificationPresenter implements NotificationPresenter {
               ?.requestPermissions(alert: true, badge: false, sound: false) ??
           false;
     }
+    if (Platform.isAndroid) {
+      // Android 13+ (API 33) requires a runtime grant. On older Android the
+      // resolver returns null → treat as granted. A denial degrades gracefully:
+      // show() returns false and the UI falls back to the in-app banner.
+      final granted = await _plugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.requestNotificationsPermission();
+      return granted ?? true;
+    }
     return true;
   }
 

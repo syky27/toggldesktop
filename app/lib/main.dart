@@ -12,13 +12,15 @@ import 'src/ui/app.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // iOS background reconcile: when iOS grants a BGAppRefresh window, end a Live
-  // Activity left stale by a timer stopped on another device while locked (the
-  // foreground poll is suspended in the background). See background_reconcile.dart.
-  if (Platform.isIOS) {
+  // Background reconcile (iOS + Android): when the OS grants a background window,
+  // end a stale live surface left by a timer stopped on another device while
+  // locked (the foreground poll is suspended in the background). On iOS the
+  // surface is a Live Activity; on Android the running-timer ongoing
+  // notification. See background_reconcile.dart.
+  if (Platform.isIOS || Platform.isAndroid) {
     await Workmanager().initialize(backgroundDispatcher);
-    // Idempotent: updates the pending task. Frequency for iOS is set in
-    // AppDelegate.swift; this submits the request.
+    // Idempotent: updates the pending task. iOS frequency is set in
+    // AppDelegate.swift; Android honours `frequency` (15 min minimum).
     await Workmanager().registerPeriodicTask(
       kReconcileTaskId,
       kReconcileTaskId,

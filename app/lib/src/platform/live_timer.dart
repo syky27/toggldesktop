@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 
 import '../models/time_entry.dart';
+import 'live_timer_android.dart';
 import 'live_timer_ios.dart';
 
 /// Drives the platform "live" glance surfaces from the running-timer state
@@ -25,9 +26,10 @@ abstract class LiveTimerController {
   void end();
 
   factory LiveTimerController.defaultFor() {
-    // iOS Live Activity (ActivityKit). Android Live Update is still deferred —
-    // it falls through to the logging no-op below.
+    // iOS Live Activity (ActivityKit); Android ongoing-notification surface.
+    // Desktop falls through to the logging no-op below.
     if (Platform.isIOS) return IosLiveActivityController();
+    if (Platform.isAndroid) return AndroidLiveTimerController();
     return _LoggingLiveTimer();
   }
 }
@@ -81,16 +83,11 @@ class LiveTimerInfo {
       );
 }
 
+/// Desktop fallback (macOS/Windows/Linux have no live glance surface): just logs.
 class _LoggingLiveTimer implements LiveTimerController {
   @override
-  void start(LiveTimerInfo info) {
-    if (Platform.isIOS || Platform.isAndroid) {
-      debugPrint('[live] start ${info.issueRef} ${info.description} '
-          '(native surface not yet wired)');
-    } else {
+  void start(LiveTimerInfo info) =>
       debugPrint('[live] start ${info.issueRef} ${info.description}');
-    }
-  }
 
   @override
   void end() => debugPrint('[live] end');

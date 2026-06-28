@@ -138,19 +138,25 @@ Linux desktop needs the GTK build deps: `clang cmake ninja-build pkg-config
 libgtk-3-dev liblzma-dev libxss-dev libx11-dev`. macOS/Windows just need the standard Flutter desktop
 toolchain (Xcode / Visual Studio "Desktop development with C++").
 
-Release builds and packaged installers (Linux AppImage, macOS `.dmg`, Windows
-`setup.exe`) are produced by GitHub Actions in
-[`.github/workflows/`](.github/workflows) — `desktop-ci.yml` on every push/PR and
-`desktop-release.yml` on a `v*` tag. The macOS `.dmg` is also installable via
-Homebrew (`brew install --cask redtick`, see [Install](#install)); publishing a
-release auto-updates the [`Casks/redtick.rb`](Casks/redtick.rb) cask via
-`update-cask.yml`.
+Release builds are produced by GitHub Actions in
+[`.github/workflows/`](.github/workflows), all triggered by a `v*` tag (plus
+`desktop-ci.yml` on every push/PR):
 
-**Desktop is the only platform with a release pipeline today.** iOS and Android
-build and run locally (`flutter run` / `flutter build` from `app/`), but there is
-no signed CI release for them yet — that work is tracked in
-[#13](https://github.com/syky27/redtick/issues/13) (iOS) and
-[#14](https://github.com/syky27/redtick/issues/14) (Android).
+- **`desktop-release.yml`** — Linux AppImage, macOS `.dmg` (signed + notarized),
+  Windows `setup.exe`, attached to a draft GitHub Release. The macOS `.dmg` is also
+  installable via Homebrew (`brew install --cask redtick`, see [Install](#install));
+  publishing a release auto-updates [`Casks/redtick.rb`](Casks/redtick.rb) via
+  `update-cask.yml`.
+- **`ios-release.yml`** — signed iOS build (+ Live Activity extension) → TestFlight.
+- **`android-release.yml`** — signed AAB + split APKs; the APKs are attached to the
+  same draft GitHub Release for **sideloading**. Google Play upload (fastlane
+  `supply`) is wired but dormant until the Play service-account secret is set.
+
+All signing is **gated on repo secrets**, so forks and secret-less runs skip
+cleanly (macOS falls back to an unsigned `.dmg`; iOS/Android skip). Windows and
+Linux installers are not code-signed yet. Setup is documented in
+[`docs/RELEASE_SIGNING.md`](docs/RELEASE_SIGNING.md) (iOS/macOS) and
+[`docs/ANDROID_RELEASE.md`](docs/ANDROID_RELEASE.md) (Android).
 
 # Credits
 

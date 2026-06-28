@@ -81,3 +81,23 @@ platform :ios do
     )
   end
 end
+
+platform :android do
+  # Upload the signed AAB (built by `flutter build appbundle --release`) to Google
+  # Play. Dormant until GOOGLE_PLAY_JSON_KEY is provided — see docs/ANDROID_RELEASE.md.
+  # The Play app record + Play App Signing must already exist (one-time, manual).
+  lane :beta do
+    upload_to_play_store(
+      package_name: MAIN_APP_ID,
+      json_key: ENV.fetch("GOOGLE_PLAY_JSON_KEY"),
+      aab: "build/app/outputs/bundle/release/app-release.aab",
+      track: ENV.fetch("GOOGLE_PLAY_TRACK", "internal"),
+      release_status: "draft",
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: true,
+    )
+  end
+end

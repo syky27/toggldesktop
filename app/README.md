@@ -47,12 +47,20 @@ GitHub Actions live in `../.github/workflows/`:
   release-mode build on macOS, Windows, and Linux (uploads a raw bundle as a sanity
   artifact).
 - **`desktop-release.yml`** — on a `v*` tag (or manual dispatch): builds and packages
-  a polished installer per platform — **Linux AppImage**, **macOS `.dmg`**, **Windows
-  Inno Setup `.exe`** — and attaches them to a draft GitHub Release. Packaging inputs
-  live in `packaging/` (`linux/redtick.desktop`, `linux/AppRun`, `windows/redtick.iss`).
+  a polished installer per platform — **Linux AppImage**, **macOS `.dmg`** (signed +
+  notarized when secrets present), **Windows Inno Setup `.exe`** — and attaches them
+  to a draft GitHub Release. Packaging inputs live in `packaging/`
+  (`linux/redtick.desktop`, `linux/AppRun`, `windows/redtick.iss`).
+- **`ios-release.yml`** — on a `v*` tag: signs the iOS app (+ Live Activity
+  extension) and uploads to **TestFlight** (fastlane `gym` + `upload_to_testflight`).
+- **`android-release.yml`** — on a `v*` tag: builds a signed **AAB** + split **APKs**;
+  attaches the APKs to the same draft GitHub Release (sideload) and, when the Play
+  service-account secret is set, uploads the AAB to **Google Play** (fastlane
+  `supply`). See `../docs/ANDROID_RELEASE.md`.
 
-The release artifacts are **unsigned** for now (documented Gatekeeper/SmartScreen
-workarounds in the release notes); code signing/notarization is a planned follow-up.
+All signing is **gated on repo secrets** (forks / secret-less runs skip cleanly).
+macOS/iOS signing is documented in `../docs/RELEASE_SIGNING.md`, Android in
+`../docs/ANDROID_RELEASE.md`. Windows and Linux installers are not code-signed yet.
 
 ## Notes
 
