@@ -21,53 +21,67 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> {
   int _index = 0;
 
-  static const _dest = <_Dest>[
-    _Dest('Timer', Icons.timer_outlined, Icons.timer),
-    _Dest('Calendar', Icons.calendar_today_outlined, Icons.calendar_today),
-    _Dest('Reports', Icons.bar_chart_outlined, Icons.bar_chart),
-    _Dest('Settings', Icons.settings_outlined, Icons.settings),
-  ];
-
-  Widget _page(int i) => switch (i) {
-        0 => const TimeEntriesScreen(),
-        1 => const CalendarScreen(),
-        2 => const ReportsScreen(),
-        _ => const SettingsScreen(),
-      };
+  // The Calendar tab depends on the toggl_* timestamp fields, so it's hidden in
+  // simple mode (custom fields off). Built dynamically so it can drop out.
+  List<_Tab> _tabs({required bool showCalendar}) => [
+        const _Tab(_Dest('Timer', Icons.timer_outlined, Icons.timer),
+            TimeEntriesScreen()),
+        if (showCalendar)
+          const _Tab(
+              _Dest('Calendar', Icons.calendar_today_outlined,
+                  Icons.calendar_today),
+              CalendarScreen()),
+        const _Tab(_Dest('Reports', Icons.bar_chart_outlined, Icons.bar_chart),
+            ReportsScreen()),
+        const _Tab(_Dest('Settings', Icons.settings_outlined, Icons.settings),
+            SettingsScreen()),
+      ];
 
   @override
   Widget build(BuildContext context) {
+    final showCalendar = ref.watch(customFieldConfigProvider).asData?.value
+            .sendCustomFields ??
+        ref.read(coreServiceProvider).sendCustomFields;
+    final tabs = _tabs(showCalendar: showCalendar);
+    final index = _index.clamp(0, tabs.length - 1); // Calendar may have dropped
+
     final isWide = MediaQuery.sizeOf(context).width >= 720;
     if (isWide) {
       return Scaffold(
         body: Row(
           children: [
             _Sidebar(
-              index: _index,
-              destinations: _dest,
+              index: index,
+              destinations: [for (final t in tabs) t.dest],
               onSelect: (i) => setState(() => _index = i),
             ),
-            Expanded(child: _page(_index)),
+            Expanded(child: tabs[index].page),
           ],
         ),
       );
     }
     return Scaffold(
-      body: _page(_index),
+      body: tabs[index].page,
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
+        selectedIndex: index,
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: [
-          for (final d in _dest)
+          for (final t in tabs)
             NavigationDestination(
-              icon: Icon(d.icon),
-              selectedIcon: Icon(d.selectedIcon),
-              label: d.label,
+              icon: Icon(t.dest.icon),
+              selectedIcon: Icon(t.dest.selectedIcon),
+              label: t.dest.label,
             ),
         ],
       ),
     );
   }
+}
+
+class _Tab {
+  const _Tab(this.dest, this.page);
+  final _Dest dest;
+  final Widget page;
 }
 
 class _Sidebar extends ConsumerWidget {

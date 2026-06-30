@@ -31,7 +31,8 @@ TimeEntry _entry() => const TimeEntry(
       activityId: 0,
     );
 
-Future<void> _pump(WidgetTester tester, double width) async {
+Future<void> _pump(WidgetTester tester, double width,
+    {bool showTimestamps = true}) async {
   tester.view.devicePixelRatio = 1.0;
   tester.view.physicalSize = Size(width, 800);
   addTearDown(tester.view.resetPhysicalSize);
@@ -39,7 +40,13 @@ Future<void> _pump(WidgetTester tester, double width) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: RedtickTheme.light(),
-      home: Scaffold(body: TimeEntryTile(entry: _entry(), onContinue: () {})),
+      home: Scaffold(
+        body: TimeEntryTile(
+          entry: _entry(),
+          onContinue: () {},
+          showTimestamps: showTimestamps,
+        ),
+      ),
     ),
   );
 }
@@ -64,5 +71,12 @@ void main() {
         reason: 'range should be left of the total on wide layouts');
     expect((range.center.dy - total.center.dy).abs(), lessThan(8),
         reason: 'range and total share a row on wide layouts');
+  });
+
+  testWidgets('simple mode hides the start–stop range, keeps the total',
+      (tester) async {
+    await _pump(tester, 1000, showTimestamps: false);
+    expect(find.textContaining('17:43'), findsNothing);
+    expect(find.text('0:22:15'), findsOneWidget); // duration still shown
   });
 }

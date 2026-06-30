@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/http_log.dart';
 import '../data/redmine_service.dart';
 import '../models/time_entry.dart';
 import '../platform/notifications.dart';
@@ -68,6 +69,23 @@ final onlineStateProvider = StreamProvider<int>(
   (ref) => ref.watch(coreServiceProvider).onlineState,
 );
 
+/// The toggl_* custom-field config (send toggle + the three ids). Drives the
+/// Settings section and the simple-mode UI gating (Calendar menu item +
+/// per-entry start/stop timestamps). Replays the current value for late
+/// subscribers.
+final customFieldConfigProvider =
+    StreamProvider<CustomFieldConfig>((ref) async* {
+  final core = ref.watch(coreServiceProvider);
+  yield core.currentCustomFieldConfig;
+  yield* core.customFieldConfig;
+});
+
+/// One-shot notice emitted when a write rejection auto-disables custom fields
+/// (wire to a one-time dialog).
+final customFieldsAutoDisabledProvider = StreamProvider<CustomFieldNotice>(
+  (ref) => ref.watch(coreServiceProvider).customFieldsAutoDisabled,
+);
+
 /// Timestamp of the last successful sync (drives the desktop "Synced · Ns ago"
 /// indicator). Replays the last value for late subscribers.
 final syncStateProvider = StreamProvider<DateTime?>((ref) async* {
@@ -102,3 +120,12 @@ final isLoggedInProvider = Provider<bool>((ref) {
 /// logging fallback). Shared by `_AuthGate` and the reminder watcher.
 final notificationPresenterProvider =
     Provider<NotificationPresenter>((ref) => NotificationPresenter.defaultFor());
+
+/// The live HTTP logger (records all Redmine + GitHub traffic when enabled).
+/// Overridden in `main()` with the instance created there (so the same object
+/// is shared by every `RedmineApiClient` and the settings toggle). Mirrors the
+/// override pattern of [coreServiceProvider].
+final httpLoggerProvider = Provider<HttpLogger>(
+  (ref) => throw UnimplementedError(
+      'httpLoggerProvider must be overridden in main() with the created HttpLogger'),
+);

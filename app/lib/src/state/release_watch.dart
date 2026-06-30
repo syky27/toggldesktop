@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/release_watch_service.dart';
+import 'providers.dart';
 
 const _defaultReleaseTag = String.fromEnvironment(
   'REDTICK_RELEASE_TAG',
@@ -112,7 +113,7 @@ final releaseWatchClockProvider = Provider<DateTime Function()>(
 );
 
 final releaseWatchServiceProvider = Provider<ReleaseWatchService>((ref) {
-  final service = ReleaseWatchService();
+  final service = ReleaseWatchService(logger: ref.watch(httpLoggerProvider));
   ref.onDispose(service.dispose);
   return service;
 });

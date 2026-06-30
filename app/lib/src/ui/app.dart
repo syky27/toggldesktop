@@ -65,6 +65,23 @@ class _AuthGate extends ConsumerWidget {
     )?.showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// A blocking, acknowledge-once dialog — used for the "custom fields turned
+  /// off" notice (more prominent than a snackbar, since it changes app mode).
+  void _alert(BuildContext context, String title, String message) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
   /// Deliver a notice as an OS notification (corner banner); fall back to the
   /// in-app banner only when it wasn't delivered (denied / unsupported platform).
   void _notify(
@@ -87,6 +104,15 @@ class _AuthGate extends ConsumerWidget {
     ref.listen(errorsProvider, (_, next) {
       final err = next.asData?.value;
       if (err != null) _toast(context, err.message);
+    });
+
+    // A write rejection auto-disabled custom fields → tell the user (every time,
+    // not just once — the notice uses identity equality to defeat dedup).
+    ref.listen(customFieldsAutoDisabledProvider, (_, next) {
+      final notice = next.asData?.value;
+      if (notice != null && notice.message.isNotEmpty) {
+        _alert(context, 'Custom fields turned off', notice.message);
+      }
     });
 
     // Reminder + pomodoro notices: OS notification, in-app banner only as a

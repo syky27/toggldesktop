@@ -31,6 +31,10 @@ class _EntryEditorDialogState extends ConsumerState<_EntryEditorDialog> {
       TextEditingController(text: widget.entry.startTimeString);
   late final TextEditingController _end =
       TextEditingController(text: widget.entry.endTimeString);
+  // Simple mode (no timestamps): edit the duration directly. The duration maps
+  // to Redmine's standard `hours` field — it needs no custom fields.
+  late final TextEditingController _dur =
+      TextEditingController(text: _durationHHMM(widget.entry.durationInSeconds));
 
   late int _activityId = widget.entry.activityId;
   late int _issueId = _parseIssueId(widget.entry.taskLabel);
@@ -40,12 +44,14 @@ class _EntryEditorDialogState extends ConsumerState<_EntryEditorDialog> {
       : DateTime.now();
   bool _saving = false;
   bool _timeError = false;
+  bool _durError = false;
 
   @override
   void dispose() {
     _desc.dispose();
     _start.dispose();
     _end.dispose();
+    _dur.dispose();
     super.dispose();
   }
 
@@ -77,6 +83,36 @@ class _EntryEditorDialogState extends ConsumerState<_EntryEditorDialog> {
   }
 
   Future<void> _save() async {
+    final core = ref.read(coreServiceProvider);
+    // Simple mode: no timestamps — edit duration (the standard `hours` field) +
+    // metadata. No custom fields involved.
+    if (!core.sendCustomFields) {
+      final hours = _parseDurationHours(_dur.text);
+      if (hours == null) {
+        setState(() => _durError = true);
+        return;
+      }
+      setState(() {
+        _saving = true;
+        _durError = false;
+      });
+      final ok = await core.updateEntryFields(
+        guid: widget.entry.guid,
+        description: _desc.text,
+        activityId: _activityId == 0 ? null : _activityId,
+        issueId: _issueId == 0 ? null : _issueId,
+        issueSubject: _issueSubject,
+        spentOn: _date,
+        hours: hours,
+      );
+      if (!mounted) return;
+      if (ok) {
+        Navigator.of(context).pop();
+      } else {
+        setState(() => _saving = false);
+      }
+      return;
+    }
     final start = _parseTime(_start.text, _date);
     var end = _parseTime(_end.text, _date);
     if (start == null || end == null) {
@@ -132,6 +168,14 @@ class _EntryEditorDialogState extends ConsumerState<_EntryEditorDialog> {
     final t = Theme.of(context).extension<RedtickTokens>()!;
     final core = ref.read(coreServiceProvider);
     final activities = core.availableActivities;
+    // Simple mode (custom fields off): no precise timestamps, so the editor
+    // shows only date/issue/comment/activity and leaves hours unchanged.
+    final showTimestamps = ref
+            .watch(customFieldConfigProvider)
+            .asData
+            ?.value
+            .sendCustomFields ??
+        core.sendCustomFields;
 
     return Dialog(
       backgroundColor: cs.surface,
@@ -182,60 +226,93 @@ class _EntryEditorDialogState extends ConsumerState<_EntryEditorDialog> {
                 ],
               ),
               const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _label('Start'),
-                        TextField(
-                            controller: _start,
-                            onChanged: (_) => setState(() {}),
-                            decoration: const InputDecoration(hintText: 'HH:mm')),
-                      ],
+              if (showTimestamps) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _label('Start'),
+                          TextField(
+                              controller: _start,
+                              onChanged: (_) => setState(() {}),
+                              decoration:
+                                  const InputDecoration(hintText: 'HH:mm')),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _label('End'),
-                        TextField(
-                            controller: _end,
-                            onChanged: (_) => setState(() {}),
-                            decoration: const InputDecoration(hintText: 'HH:mm')),
-                      ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _label('End'),
+                          TextField(
+                              controller: _end,
+                              onChanged: (_) => setState(() {}),
+                              decoration:
+                                  const InputDecoration(hintText: 'HH:mm')),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [_label('Date'), _dateField()],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [_label('Date'), _dateField()],
+                      ),
                     ),
-                  ),
+                  ],
+                ),
+                if (_timeError) ...[
+                  const SizedBox(height: 8),
+                  Text('Enter valid start and end times (HH:mm).',
+                      style: TextStyle(color: cs.error, fontSize: 12)),
                 ],
-              ),
-              if (_timeError) ...[
-                const SizedBox(height: 8),
-                Text('Enter valid start and end times (HH:mm).',
-                    style: TextStyle(color: cs.error, fontSize: 12)),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Text('Duration → Redmine hours',
+                        style: TextStyle(color: cs.onSurfaceVariant)),
+                    const Spacer(),
+                    Text(_fmt(_duration),
+                        style: RedtickTheme.mono(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurface)),
+                  ],
+                ),
+              ] else ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _label('Duration'),
+                          TextField(
+                            controller: _dur,
+                            decoration: const InputDecoration(hintText: 'H:MM'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [_label('Date'), _dateField()],
+                      ),
+                    ),
+                  ],
+                ),
+                if (_durError) ...[
+                  const SizedBox(height: 8),
+                  Text('Enter a valid duration (e.g. 1:30 or 1.5).',
+                      style: TextStyle(color: cs.error, fontSize: 12)),
+                ],
               ],
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Text('Duration → Redmine hours',
-                      style: TextStyle(color: cs.onSurfaceVariant)),
-                  const Spacer(),
-                  Text(_fmt(_duration),
-                      style: RedtickTheme.mono(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: cs.onSurface)),
-                ],
-              ),
               const SizedBox(height: 20),
               Row(
                 children: [
@@ -379,5 +456,26 @@ class _EntryEditorDialogState extends ConsumerState<_EntryEditorDialog> {
     final m = d.inMinutes % 60;
     final s = d.inSeconds % 60;
     return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  /// "H:MM" for the simple-mode duration field (empty for a zero duration).
+  static String _durationHHMM(int seconds) {
+    if (seconds <= 0) return '';
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    return '$h:${m.toString().padLeft(2, '0')}';
+  }
+
+  /// Parse "H:MM" or decimal hours ("1.5" / "1,5") → hours; null if invalid.
+  static double? _parseDurationHours(String s) {
+    final v = s.trim();
+    if (v.isEmpty) return null;
+    final colon = RegExp(r'^(\d+):([0-5]?\d)$').firstMatch(v);
+    if (colon != null) {
+      return int.parse(colon.group(1)!) + int.parse(colon.group(2)!) / 60.0;
+    }
+    final dec = double.tryParse(v.replaceAll(',', '.'));
+    if (dec == null || dec < 0) return null;
+    return dec;
   }
 }

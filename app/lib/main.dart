@@ -2,10 +2,13 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
+import 'src/data/http_log.dart';
 import 'src/data/redmine_service.dart';
 import 'src/platform/background_reconcile.dart';
+import 'src/state/logging_settings.dart';
 import 'src/state/providers.dart';
 import 'src/ui/app.dart';
 
@@ -28,14 +31,25 @@ Future<void> main() async {
     );
   }
 
+  // Arm the HTTP logger from the persisted flag BEFORE building the service, so
+  // the very first auto-login (and its custom-field resolution) is captured.
+  // The same instance is shared with the settings toggle via httpLoggerProvider.
+  final prefs = await SharedPreferences.getInstance();
+  final logger = HttpLogger(
+    enabled: prefs.getBool(LoggingSettingsNotifier.kEnabled) ?? false,
+  );
+
   // Pure-Dart Redmine backend. `create()` restores a persisted session and
   // auto-logs-in if one exists (the instant-relaunch behaviour). No FFI, no
   // native library, no SQLite.
-  final service = await RedmineService.create();
+  final service = await RedmineService.create(logger: logger);
 
   runApp(
     ProviderScope(
-      overrides: [coreServiceProvider.overrideWithValue(service)],
+      overrides: [
+        coreServiceProvider.overrideWithValue(service),
+        httpLoggerProvider.overrideWithValue(logger),
+      ],
       child: const RedtickApp(),
     ),
   );

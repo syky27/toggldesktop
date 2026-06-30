@@ -3,7 +3,9 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../platform/log_file.dart';
 import '../../state/idle_settings.dart';
+import '../../state/logging_settings.dart';
 import '../../state/multi_task_settings.dart';
 import '../../state/providers.dart';
 import '../../state/release_watch.dart';
@@ -23,6 +25,7 @@ class SettingsScreen extends ConsumerWidget {
     final idle = ref.watch(idleSettingsProvider);
     final rem = ref.watch(reminderSettingsProvider);
     final multi = ref.watch(multiTaskSettingsProvider);
+    final logging = ref.watch(loggingSettingsProvider);
     final cs = Theme.of(context).colorScheme;
     final isDesktop =
         Platform.isMacOS || Platform.isWindows || Platform.isLinux;
@@ -176,6 +179,30 @@ class SettingsScreen extends ConsumerWidget {
               _TimeWindowRow(enabled: rem.enabled),
             ],
 
+            // --- Redmine custom fields (all platforms): the timer-metadata
+            // field ids + the master "send custom fields" toggle. ---
+            const _CustomFieldsSection(),
+
+            // --- Diagnostics (desktop only: opening/revealing the log file
+            // needs a file manager, which mobile doesn't expose) ---
+            if (isDesktop) ...[
+              const SizedBox(height: 24),
+              const _SectionHeader('Diagnostics'),
+              _Row(
+                title: 'Log HTTP to a file',
+                subtitle: 'Records every Redmine request and response (your '
+                    'Redmine data) to a local file. The API key is never '
+                    'written. Use it to diagnose failing requests.',
+                trailing: Switch(
+                  value: logging.enabled,
+                  onChanged: (v) => ref
+                      .read(loggingSettingsProvider.notifier)
+                      .setEnabled(v),
+                ),
+              ),
+              if (logging.enabled) const _LogFileRow(),
+            ],
+
             // --- About / updates ---
             const SizedBox(height: 24),
             const _SectionHeader('About'),
@@ -255,6 +282,230 @@ class _CheckForUpdatesRow extends ConsumerWidget {
               )
             : const Icon(Icons.system_update_alt, size: 16),
         label: Text(checking ? 'Checking…' : 'Check for updates'),
+      ),
+    );
+  }
+}
+
+/// The toggl_* custom-field config: the master "send custom fields" toggle plus
+/// the three editable numeric field ids (prefilled with what we resolved). The
+/// ids commit on submit / focus-loss; the toggle flips simple mode live.
+class _CustomFieldsSection extends ConsumerStatefulWidget {
+  const _CustomFieldsSection();
+
+  @override
+  ConsumerState<_CustomFieldsSection> createState() =>
+      _CustomFieldsSectionState();
+}
+
+class _CustomFieldsSectionState extends ConsumerState<_CustomFieldsSection> {
+  final _start = TextEditingController();
+  final _stop = TextEditingController();
+  final _guid = TextEditingController();
+  final _startFocus = FocusNode();
+  final _stopFocus = FocusNode();
+  final _guidFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    final core = ref.read(coreServiceProvider);
+    _start.text = '${core.cfStartId}';
+    _stop.text = '${core.cfStopId}';
+    _guid.text = '${core.cfGuidId}';
+    _startFocus.addListener(_commitOnBlur);
+    _stopFocus.addListener(_commitOnBlur);
+    _guidFocus.addListener(_commitOnBlur);
+  }
+
+  @override
+  void dispose() {
+    _start.dispose();
+    _stop.dispose();
+    _guid.dispose();
+    _startFocus.dispose();
+    _stopFocus.dispose();
+    _guidFocus.dispose();
+    super.dispose();
+  }
+
+  void _commitOnBlur() {
+    if (_startFocus.hasFocus || _stopFocus.hasFocus || _guidFocus.hasFocus) {
+      return;
+    }
+    _commit();
+  }
+
+  void _commit() {
+    ref.read(coreServiceProvider).setCustomFieldIds(
+          start: int.tryParse(_start.text.trim()),
+          stop: int.tryParse(_stop.text.trim()),
+          guid: int.tryParse(_guid.text.trim()),
+        );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final core = ref.watch(coreServiceProvider);
+    final cfg = ref.watch(customFieldConfigProvider).asData?.value ??
+        core.currentCustomFieldConfig;
+    // Reflect login-time id resolution in any field the user isn't editing.
+    ref.listen(customFieldConfigProvider, (_, next) {
+      final c = next.asData?.value;
+      if (c == null) return;
+      if (!_startFocus.hasFocus) _start.text = '${c.startId}';
+      if (!_stopFocus.hasFocus) _stop.text = '${c.stopId}';
+      if (!_guidFocus.hasFocus) _guid.text = '${c.guidId}';
+    });
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 24),
+        const _SectionHeader('Redmine custom fields'),
+        _Row(
+          title: 'Send custom fields with entries',
+          subtitle: cfg.sendCustomFields
+              ? 'Stores precise start/stop times and a Redtick ID on each entry.'
+              : 'Off — logging plain hours; timestamps and Calendar are hidden.',
+          trailing: Switch(
+            value: cfg.sendCustomFields,
+            onChanged: (v) async {
+              final core = ref.read(coreServiceProvider);
+              await core.setSendCustomFields(v);
+              if (!v) return;
+              // Turning it on → probe the instance immediately. If the fields
+              // don't work it flips back off + alerts; if they do, confirm so
+              // the toggle's behaviour is never silently ambiguous.
+              final ok = await core.verifyCustomFieldsNow();
+              if (ok && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Custom fields are working on this instance.')));
+              }
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
+          child: Text(
+            'Numeric Redmine custom-field ids. We prefill what we detect; if '
+            'your admin gives you the ids, enter them here.',
+            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12.5),
+          ),
+        ),
+        _idField('Redtick ID', _guid, _guidFocus),
+        _idField('Start Timestamp', _start, _startFocus),
+        _idField('Stop Timestamp', _stop, _stopFocus),
+      ],
+    );
+  }
+
+  Widget _idField(String label, TextEditingController c, FocusNode f) {
+    final t = Theme.of(context).extension<RedtickTokens>()!;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: t.hairline)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label,
+                style:
+                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+          ),
+          SizedBox(
+            width: 88,
+            child: TextField(
+              controller: c,
+              focusNode: f,
+              textAlign: TextAlign.center,
+              keyboardType: TextInputType.number,
+              onSubmitted: (_) => _commit(),
+              decoration: const InputDecoration(isDense: true),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shows the HTTP log path (selectable, so it's copyable even if the reveal
+/// fails) with buttons to reveal it in the file manager and to clear it.
+class _LogFileRow extends ConsumerStatefulWidget {
+  const _LogFileRow();
+
+  @override
+  ConsumerState<_LogFileRow> createState() => _LogFileRowState();
+}
+
+class _LogFileRowState extends ConsumerState<_LogFileRow> {
+  String _path = '';
+
+  @override
+  void initState() {
+    super.initState();
+    ref.read(httpLoggerProvider).file().then((f) {
+      if (mounted) setState(() => _path = f.path);
+    });
+  }
+
+  Future<void> _reveal() async {
+    final path = _path;
+    if (path.isEmpty) return;
+    final ok = await ref.read(logFileRevealerProvider)(path);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Couldn't open the log — it's at:\n$path")),
+      );
+    }
+  }
+
+  Future<void> _clear() async {
+    await ref.read(httpLoggerProvider).clear();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Log cleared')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).extension<RedtickTokens>()!;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: t.hairline)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Log file',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+          const SizedBox(height: 4),
+          SelectableText(
+            _path.isEmpty ? 'Resolving…' : _path,
+            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12.5),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _path.isEmpty ? null : _reveal,
+                icon: const Icon(Icons.folder_open, size: 16),
+                label: const Text('Show log'),
+              ),
+              const SizedBox(width: 12),
+              TextButton.icon(
+                onPressed: _path.isEmpty ? null : _clear,
+                icon: const Icon(Icons.delete_outline, size: 16),
+                label: const Text('Clear log'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

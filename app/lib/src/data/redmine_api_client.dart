@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+
+import 'http_log.dart';
 
 /// Thin Dart client over the Redmine REST API — the native replacement for the
 /// C++ core's `RedmineClient` (`src/redmine_client.cc`).
@@ -15,12 +18,14 @@ class RedmineApiClient {
     required String baseUrl,
     required this.apiKey,
     http.Client? client,
+    this.logger,
   })  : _baseUrl = _normalizeBase(baseUrl),
         _client = client ?? http.Client();
 
   final String _baseUrl;
   final String apiKey;
   final http.Client _client;
+  final HttpLogger? logger;
 
   static const int _pageSize = 100;
 
@@ -47,24 +52,36 @@ class RedmineApiClient {
 
   Future<Map<String, dynamic>> _getJson(String relativeUrl) async {
     final uri = Uri.parse('$_baseUrl$relativeUrl');
+    final reqHeaders = <String, String>{
+      'X-Redmine-API-Key': apiKey,
+      'Accept': 'application/json',
+    };
+    final sw = Stopwatch()..start();
     final http.Response resp;
     try {
       // followRedirects=false: surface a 3xx as an error (don't silently follow
       // to a different host and leak the API key) — the host must be exact.
       final req = http.Request('GET', uri)
         ..followRedirects = false
-        ..headers['X-Redmine-API-Key'] = apiKey
-        ..headers['Accept'] = 'application/json';
+        ..headers.addAll(reqHeaders);
       final streamed =
           await _client.send(req).timeout(const Duration(seconds: 20));
       resp = await http.Response.fromStream(streamed);
     } on SocketException catch (e) {
+      _log('GET', uri, reqHeaders, elapsed: sw.elapsed, error: e);
       throw RedmineException.network('Cannot reach ${uri.host}: ${e.message}');
+    } on TimeoutException catch (e) {
+      _log('GET', uri, reqHeaders, elapsed: sw.elapsed, error: e);
+      throw RedmineException.network('Timed out reaching ${uri.host}.');
     } on HttpException catch (e) {
+      _log('GET', uri, reqHeaders, elapsed: sw.elapsed, error: e);
       throw RedmineException.network('Network error: ${e.message}');
     } on FormatException catch (e) {
+      _log('GET', uri, reqHeaders, elapsed: sw.elapsed, error: e);
       throw RedmineException('Bad URL: ${e.message}');
     }
+
+    _log('GET', uri, reqHeaders, resp: resp, elapsed: sw.elapsed);
 
     if (resp.statusCode == 401 || resp.statusCode == 403) {
       throw RedmineException.auth(
@@ -79,7 +96,9 @@ class RedmineApiClient {
       throw RedmineException.notFound('Not found: $relativeUrl');
     }
     if (resp.statusCode >= 400) {
-      throw RedmineException('Redmine HTTP ${resp.statusCode} for $relativeUrl');
+      throw RedmineException(
+          'Redmine HTTP ${resp.statusCode} for $relativeUrl: '
+          '${_snippet(resp.body)}');
     }
     try {
       final decoded = jsonDecode(resp.body);
@@ -239,6 +258,14 @@ class RedmineApiClient {
     required int cfStop,
     required int cfGuid,
   }) async {
+    // Each custom field is sent only when its id > 0 — passing 0 (simple mode /
+    // sending disabled) omits the array entirely, so the entry posts as plain
+    // hours. Mirrors updateTimeEntry's per-field conditionals.
+    final cfs = <Map<String, dynamic>>[
+      if (cfStart > 0) {'id': cfStart, 'value': togglStart},
+      if (cfStop > 0) {'id': cfStop, 'value': togglStop},
+      if (cfGuid > 0) {'id': cfGuid, 'value': togglGuid},
+    ];
     final body = <String, dynamic>{
       'time_entry': {
         if (issueId > 0) 'issue_id': issueId,
@@ -247,11 +274,7 @@ class RedmineApiClient {
         'spent_on': _date(spentOn),
         'comments': comments,
         'activity_id': activityId,
-        'custom_fields': [
-          {'id': cfStart, 'value': togglStart},
-          {'id': cfStop, 'value': togglStop},
-          {'id': cfGuid, 'value': togglGuid},
-        ],
+        if (cfs.isNotEmpty) 'custom_fields': cfs,
       },
     };
     final root = await _send('POST', '/time_entries.json', body);
@@ -301,22 +324,37 @@ class RedmineApiClient {
   Future<Map<String, dynamic>?> _send(
       String method, String relativeUrl, Map<String, dynamic>? body) async {
     final uri = Uri.parse('$_baseUrl$relativeUrl');
+    final reqHeaders = <String, String>{
+      'X-Redmine-API-Key': apiKey,
+      'Accept': 'application/json',
+    };
     final req = http.Request(method, uri)
       ..followRedirects = false
-      ..headers['X-Redmine-API-Key'] = apiKey
-      ..headers['Accept'] = 'application/json';
+      ..headers.addAll(reqHeaders);
+    String? reqBody;
     if (body != null) {
+      reqBody = jsonEncode(body);
+      reqHeaders['Content-Type'] = 'application/json';
       req.headers['Content-Type'] = 'application/json';
-      req.body = jsonEncode(body);
+      req.body = reqBody;
     }
+    final sw = Stopwatch()..start();
     final http.StreamedResponse streamed;
     try {
       streamed =
           await _client.send(req).timeout(const Duration(seconds: 20));
     } on SocketException catch (e) {
+      _log(method, uri, reqHeaders, reqBody: reqBody, elapsed: sw.elapsed,
+          error: e);
       throw RedmineException.network('Cannot reach ${uri.host}: ${e.message}');
+    } on TimeoutException catch (e) {
+      _log(method, uri, reqHeaders, reqBody: reqBody, elapsed: sw.elapsed,
+          error: e);
+      throw RedmineException.network('Timed out reaching ${uri.host}.');
     }
     final resp = await http.Response.fromStream(streamed);
+    _log(method, uri, reqHeaders, reqBody: reqBody, resp: resp,
+        elapsed: sw.elapsed);
     if (resp.statusCode == 401 || resp.statusCode == 403) {
       throw RedmineException.auth('Unauthorized (${resp.statusCode}).');
     }
@@ -338,6 +376,40 @@ class RedmineApiClient {
     } on FormatException {
       return null;
     }
+  }
+
+  /// Forward one exchange to the HTTP logger (no-op when disabled). The guard
+  /// avoids any work — including reading the response body — when off.
+  void _log(
+    String method,
+    Uri uri,
+    Map<String, String> reqHeaders, {
+    String? reqBody,
+    http.Response? resp,
+    required Duration elapsed,
+    Object? error,
+  }) {
+    final lg = logger;
+    if (lg == null || !lg.enabled) return;
+    lg.record(
+      method: method,
+      url: uri.toString(),
+      requestHeaders: reqHeaders,
+      requestBody: reqBody,
+      statusCode: resp?.statusCode,
+      responseHeaders: resp?.headers,
+      responseBody: resp?.body,
+      elapsed: elapsed,
+      error: error,
+    );
+  }
+
+  /// A short, single-line excerpt of an error response body for the exception
+  /// message (the full body is in the HTTP log).
+  static String _snippet(String body) {
+    final s = body.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (s.isEmpty) return '(empty body)';
+    return s.length <= 300 ? s : '${s.substring(0, 300)}…';
   }
 
   static String _date(DateTime t) =>

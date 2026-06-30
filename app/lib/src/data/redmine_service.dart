@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/time_entry.dart';
 import '../util/project_color.dart';
+import 'http_log.dart';
 import 'offline_queue.dart';
 import 'redmine_api_client.dart';
 
@@ -32,11 +33,13 @@ class RedmineService {
   static Future<RedmineService> create({
     http.Client? httpClient,
     OfflineQueue? queue,
+    HttpLogger? logger,
     DateTime Function()? clock,
   }) async {
     final s = RedmineService._()
       .._httpClient = httpClient
-      .._queue = queue ?? OfflineQueue();
+      .._queue = queue ?? OfflineQueue()
+      .._logger = logger;
     if (clock != null) s._now = clock;
     await s._restore();
     return s;
@@ -44,6 +47,7 @@ class RedmineService {
 
   http.Client? _httpClient;
   OfflineQueue _queue = OfflineQueue();
+  HttpLogger? _logger;
 
   /// Wall-clock, injectable for tests (the reconcile drop-guard reads it).
   DateTime Function() _now = DateTime.now;
@@ -121,6 +125,24 @@ class RedmineService {
   bool _activityUserSet = false; // a user-chosen default overrides resolution
   List<Activity> _activities = const [];
 
+  // Whether the toggl_* custom fields are sent with writes. Off = "simple mode"
+  // (plain hour logging; timestamps + calendar hidden). Auto-disabled (sticky)
+  // when the instance rejects the fields; re-enabled manually in Settings.
+  bool _sendCustomFields = true;
+  // A user-entered field id (Settings) wins over name-resolution at login.
+  bool _cfUserSet = false;
+  // Per-session latch: once a written entry reads back WITH our custom-field
+  // values, the fields are confirmed working and we stop the round-trip check.
+  // Redmine silently *drops* (201, no 422) values for fields the user can't set,
+  // so verifying the values stuck is the only reliable "fields work" signal.
+  bool _cfVerified = false;
+
+  static const _kCfSend = 'cf_send';
+  static const _kCfStart = 'cf_id_start';
+  static const _kCfStop = 'cf_id_stop';
+  static const _kCfGuid = 'cf_id_guid';
+  static const _kCfUserSet = 'cf_user_set';
+
   final _projects = <int, _Project>{};
   final _issues = <int, _Issue>{};
 
@@ -172,6 +194,11 @@ class RedmineService {
   final _pomodoro = StreamController<Notice>.broadcast();
   final _idle = StreamController<IdleNotice>.broadcast();
   final _syncEvents = StreamController<DateTime>.broadcast();
+  // Custom-field config (toggle + the three ids); drives Settings + the
+  // simple-mode UI gating (calendar/timestamps). [_cfAutoDisabled] is a one-shot
+  // signal carrying the alert message when a write rejection turns sending off.
+  final _cfConfig = StreamController<CustomFieldConfig>.broadcast();
+  final _cfAutoDisabled = StreamController<CustomFieldNotice>.broadcast();
 
   LoginEvent? _lastLogin;
   List<TimeEntry>? _lastTimeEntries;
@@ -228,6 +255,187 @@ class RedmineService {
   }
 
   int get defaultActivityId => _defaultActivityId;
+
+  // --- custom-field config (Settings + simple-mode gating) ---
+
+  /// Config changes (toggle + ids): Settings, the calendar/timestamp gating.
+  Stream<CustomFieldConfig> get customFieldConfig => _cfConfig.stream;
+
+  /// One-shot notice when a write rejection auto-disables custom fields.
+  Stream<CustomFieldNotice> get customFieldsAutoDisabled =>
+      _cfAutoDisabled.stream;
+
+  /// Current config (replayed for late subscribers, like the other state).
+  CustomFieldConfig get currentCustomFieldConfig => CustomFieldConfig(
+        sendCustomFields: _sendCustomFields,
+        startId: _cfStart,
+        stopId: _cfStop,
+        guidId: _cfGuid,
+      );
+
+  bool get sendCustomFields => _sendCustomFields;
+  int get cfStartId => _cfStart;
+  int get cfStopId => _cfStop;
+  int get cfGuidId => _cfGuid;
+
+  void _emitCfConfig() => _emit(_cfConfig, currentCustomFieldConfig);
+
+  /// Turn sending of the toggl_* custom fields on/off (persisted). Off hides the
+  /// timestamps + Calendar and logs plain hours.
+  Future<void> setSendCustomFields(bool v) async {
+    if (_sendCustomFields == v) return;
+    _sendCustomFields = v;
+    if (v) _cfVerified = false; // re-enabled → re-verify on the next write
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kCfSend, v);
+    _emitCfConfig();
+  }
+
+  /// User-entered custom-field ids (Settings). Marks them user-set so login
+  /// name-resolution won't overwrite them.
+  Future<void> setCustomFieldIds({int? start, int? stop, int? guid}) async {
+    if (start != null) _cfStart = start;
+    if (stop != null) _cfStop = stop;
+    if (guid != null) _cfGuid = guid;
+    _cfUserSet = true;
+    _cfVerified = false; // new ids → re-verify on the next write
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_kCfStart, _cfStart);
+    await prefs.setInt(_kCfStop, _cfStop);
+    await prefs.setInt(_kCfGuid, _cfGuid);
+    await prefs.setBool(_kCfUserSet, true);
+    _emitCfConfig();
+  }
+
+  // The custom-field ids to write right now — the resolved id, or 0 (omit the
+  // field) when sending is disabled. Used by the offline-queue enqueue paths.
+  int get _outCfStart => _sendCustomFields ? _cfStart : 0;
+  int get _outCfStop => _sendCustomFields ? _cfStop : 0;
+  int get _outCfGuid => _sendCustomFields ? _cfGuid : 0;
+
+  /// Run a write, retrying once without custom fields if Redmine rejects it
+  /// while they were sent. A 422 typically means the instance doesn't have the
+  /// toggl_* fields (their ids can't be discovered without admin) — so if the
+  /// retry succeeds, the fields were the culprit: disable (sticky) + alert, and
+  /// the entry is still saved. [op] receives whether to include custom fields.
+  Future<T> _withCfRetry<T>(Future<T> Function(bool withCf) op) async {
+    if (!_sendCustomFields) return op(false);
+    try {
+      return await op(true);
+    } on RedmineException catch (e) {
+      // Only a plain rejection (422 etc.) might be the fields; auth/network/
+      // not-found are surfaced as-is.
+      if (e.kind != RedmineErrorKind.generic) rethrow;
+      final T result;
+      try {
+        result = await op(false);
+      } catch (_) {
+        throw e; // retry didn't help → not the fields; surface the original.
+      }
+      await _autoDisableCustomFields();
+      return result;
+    }
+  }
+
+  /// After a successful create that sent custom fields, read the entry back and
+  /// confirm our values persisted. Redmine returns 201 and silently drops values
+  /// for fields the user can't set (or that don't exist), so a successful POST
+  /// is NOT proof the fields work — this round-trip is. If they didn't stick,
+  /// switch to simple mode (disable + alert). Runs at most once per session.
+  Future<void> _maybeVerifyCustomFields(int? id) async {
+    if (!_sendCustomFields || _cfVerified || id == null || id <= 0) return;
+    final api = _api;
+    if (api == null) return;
+    try {
+      final te = await api.timeEntry(id);
+      if (te == null) return; // gone already — can't verify; try next write
+      final cfs = te['custom_fields'] as List?;
+      final start = _customField(cfs, _cfStart) ?? '';
+      final guid = _customField(cfs, _cfGuid) ?? '';
+      if (start.isEmpty && guid.isEmpty) {
+        await _autoDisableCustomFields();
+      } else {
+        _cfVerified = true;
+      }
+    } on RedmineException {
+      // Couldn't read it back (transient) — don't penalize; verify next write.
+    }
+  }
+
+  /// Probe whether the instance accepts our custom fields *right now*, so turning
+  /// the setting on gives immediate feedback instead of waiting for the next real
+  /// entry. Writes a tiny throwaway entry, reads it back, and deletes it —
+  /// invisible to the UI (no optimistic insert / refresh). Best-effort: if it
+  /// can't run (nothing to attach to, offline, or a create rejection) it leaves
+  /// verification to the next real write. Only the round-trip check disables (so
+  /// an unrelated create-validation error never falsely flips simple mode).
+  /// Returns true only when the probe confirmed the fields work; false if it
+  /// disabled them or couldn't run.
+  Future<bool> verifyCustomFieldsNow() async {
+    final api = _api;
+    if (api == null || !_sendCustomFields) return false;
+    if (_cfVerified) return true;
+    var issueId = _recent.isNotEmpty ? _recent.first.tid : 0;
+    var projectId = _recent.isNotEmpty ? _recent.first.pid : 0;
+    if (issueId <= 0 && _issues.isNotEmpty) issueId = _issues.keys.first;
+    if (issueId <= 0 && projectId <= 0 && _projects.isNotEmpty) {
+      projectId = _projects.keys.first;
+    }
+    if (issueId <= 0 && projectId <= 0) return false; // nothing to attach to
+    final now = DateTime.now();
+    int? probeId;
+    try {
+      probeId = await api.createTimeEntry(
+        issueId: issueId,
+        projectId: projectId,
+        hours: 0.01,
+        spentOn: now,
+        comments: 'Redtick custom-field self-check',
+        activityId: _defaultActivityId,
+        togglStart: _isoZ(now),
+        togglStop: _isoZ(now),
+        togglGuid: _uuid(),
+        cfStart: _cfStart,
+        cfStop: _cfStop,
+        cfGuid: _cfGuid,
+      );
+      final te = await api.timeEntry(probeId);
+      final cfs = te?['custom_fields'] as List?;
+      final gotStart = _customField(cfs, _cfStart) ?? '';
+      final gotGuid = _customField(cfs, _cfGuid) ?? '';
+      if (gotStart.isEmpty && gotGuid.isEmpty) {
+        await _autoDisableCustomFields();
+        return false;
+      }
+      _cfVerified = true;
+      return true;
+    } on RedmineException {
+      return false; // couldn't run the probe — leave it to the next real write
+    } finally {
+      if (probeId != null) {
+        try {
+          await api.deleteTimeEntry(probeId);
+        } catch (_) {/* best effort cleanup */}
+      }
+    }
+  }
+
+  Future<void> _autoDisableCustomFields() async {
+    if (!_sendCustomFields) return;
+    await setSendCustomFields(false);
+    _emit(
+      _cfAutoDisabled,
+      CustomFieldNotice(
+        "Redtick couldn't save its custom fields on this Redmine instance — "
+        "they're missing, or your account isn't allowed to set them. Sending "
+        'them has been turned off, so your time is still logged as hours (the '
+        'precise start/stop times and the Calendar are hidden). To use them, '
+        'create the three time-entry custom fields described in the Redtick '
+        "README (any names) and enter their IDs under Settings → 'Redmine "
+        "custom fields', then turn this back on.",
+      ),
+    );
+  }
 
   /// User-chosen default activity for new entries (persisted; design §3.8).
   Future<void> setDefaultActivity(int id) async {
@@ -297,9 +505,13 @@ class RedmineService {
       return;
     }
     _apiKey = apiKey;
+    _cfVerified = false; // fresh session/instance → verify on the first write
     _api?.dispose();
     _api = RedmineApiClient(
-        baseUrl: _baseUrl, apiKey: apiKey, client: _httpClient);
+        baseUrl: _baseUrl,
+        apiKey: apiKey,
+        client: _httpClient,
+        logger: _logger);
     try {
       final user = await _api!.currentUser();
       _userId = (user['id'] as num).toInt();
@@ -491,25 +703,34 @@ class RedmineService {
         final id = (f['id'] as num?)?.toInt() ?? 0;
         final name = f['name'] as String?;
         if (id <= 0 || name == null) continue;
+        // A user-entered id (Settings) is authoritative — never overwrite it.
         if (name == 'toggl_start') {
-          _cfStart = id;
+          if (!_cfUserSet) _cfStart = id;
           fStart = true;
         } else if (name == 'toggl_stop') {
-          _cfStop = id;
+          if (!_cfUserSet) _cfStop = id;
           fStop = true;
         } else if (name == 'toggl_guid') {
-          _cfGuid = id;
+          if (!_cfUserSet) _cfGuid = id;
           fGuid = true;
         }
       }
     }
 
-    for (final e in entries) {
-      match(e['custom_fields'] as List?);
-    }
-    if (!(fStart && fStop && fGuid)) {
-      final defs = await api.customFieldDefs();
-      match(defs);
+    // Skip name-resolution entirely when the user pinned the ids in Settings
+    // (also avoids the admin-only /custom_fields.json 403 for non-admins).
+    if (!_cfUserSet) {
+      for (final e in entries) {
+        match(e['custom_fields'] as List?);
+      }
+      if (!(fStart && fStop && fGuid)) {
+        final defs = await api.customFieldDefs();
+        match(defs);
+      }
+      // Reflect any resolved ids in Settings. A genuine "fields are missing"
+      // signal now comes from a write rejection (auto-disable + alert), not a
+      // login-time guess — non-admins can't list field definitions at all.
+      _emitCfConfig();
     }
   }
 
@@ -990,20 +1211,21 @@ class RedmineService {
     _composeAndEmit();
 
     try {
-      await api.createTimeEntry(
-        issueId: issueId,
-        projectId: projectId,
-        hours: hours,
-        spentOn: start,
-        comments: description,
-        activityId: activityId,
-        togglStart: _isoZ(start),
-        togglStop: _isoZ(end),
-        togglGuid: guid,
-        cfStart: _cfStart,
-        cfStop: _cfStop,
-        cfGuid: _cfGuid,
-      );
+      final newId = await _withCfRetry((withCf) => api.createTimeEntry(
+            issueId: issueId,
+            projectId: projectId,
+            hours: hours,
+            spentOn: start,
+            comments: description,
+            activityId: activityId,
+            togglStart: _isoZ(start),
+            togglStop: _isoZ(end),
+            togglGuid: guid,
+            cfStart: withCf ? _cfStart : 0,
+            cfStop: withCf ? _cfStop : 0,
+            cfGuid: withCf ? _cfGuid : 0,
+          ));
+      await _maybeVerifyCustomFields(newId);
       await refresh();
       // The authoritative row (if the server reflects it) is now in _recent;
       // clear the placeholder unconditionally so a guid that failed to
@@ -1022,9 +1244,9 @@ class RedmineService {
           'togglStart': _isoZ(start),
           'togglStop': _isoZ(end),
           'togglGuid': guid,
-          'cfStart': _cfStart,
-          'cfStop': _cfStop,
-          'cfGuid': _cfGuid,
+          'cfStart': _outCfStart,
+          'cfStop': _outCfStop,
+          'cfGuid': _outCfGuid,
         });
         _emit(_onlineState, 1);
         // Keep the optimistic entry visible; it syncs when the queue flushes.
@@ -1097,6 +1319,11 @@ class RedmineService {
     _running.add(entry);
     _emitRunning();
 
+    // Simple mode (custom fields off): the server can't represent a "running"
+    // entry (no open toggl_stop), so defer — track locally now, create one
+    // completed entry on stop. Leave redmineId/createFuture null.
+    if (!_sendCustomFields) return;
+
     // Track the in-flight create so a fast stop can await its id instead of
     // posting a duplicate (this future never throws — errors are reported).
     entry.createFuture = api
@@ -1123,9 +1350,17 @@ class RedmineService {
         }
       }
       _emit(_onlineState, 0);
+      // Confirm the toggl_* values actually persisted (Redmine may have silently
+      // dropped them) — disables + alerts if not.
+      unawaited(_maybeVerifyCustomFields(id));
       return id;
     }).catchError((Object e) {
-      if (e is RedmineException) _reportError(e);
+      // A plain rejection (e.g. the instance lacks the toggl_* fields) keeps the
+      // timer local/deferred — stop will create it (and detect/disable+alert via
+      // _withCfRetry). Only auth/network/not-found surface here.
+      if (e is RedmineException && e.kind != RedmineErrorKind.generic) {
+        _reportError(e);
+      }
       return null;
     });
     await entry.createFuture;
@@ -1157,6 +1392,7 @@ class RedmineService {
       }
     }
     if (r == null) return;
+    final re = r; // non-null capture for the create closure below
     _running.remove(r);
     _emitRunning();
 
@@ -1169,41 +1405,44 @@ class RedmineService {
     // onto that row — never post a second (duplicate) entry.
     int? id = r.redmineId;
     if (id == null && r.createFuture != null) id = await r.createFuture;
+    final entryId = id;
     try {
-      if (id != null) {
-        await api.updateTimeEntry(
-          id: id,
-          hours: hours,
-          togglStop: _isoZ(stop),
-          cfStop: _cfStop,
-        );
+      if (entryId != null) {
+        await _withCfRetry((withCf) => api.updateTimeEntry(
+              id: entryId,
+              hours: hours,
+              togglStop: _isoZ(stop),
+              cfStop: withCf ? _cfStop : 0,
+            ));
       } else {
-        // The start POST genuinely failed — create the finished entry now.
-        await api.createTimeEntry(
-          issueId: r.issueId,
-          projectId: r.projectId,
-          hours: hours,
-          spentOn: r.start,
-          comments: r.description,
-          activityId: r.activityId,
-          togglStart: _isoZ(r.start),
-          togglStop: _isoZ(stop),
-          togglGuid: r.guid,
-          cfStart: _cfStart,
-          cfStop: _cfStop,
-          cfGuid: _cfGuid,
-        );
+        // No server row yet (deferred simple-mode timer, or a failed start POST)
+        // — create the finished entry now.
+        final newId = await _withCfRetry((withCf) => api.createTimeEntry(
+              issueId: re.issueId,
+              projectId: re.projectId,
+              hours: hours,
+              spentOn: re.start,
+              comments: re.description,
+              activityId: re.activityId,
+              togglStart: _isoZ(re.start),
+              togglStop: _isoZ(stop),
+              togglGuid: re.guid,
+              cfStart: withCf ? _cfStart : 0,
+              cfStop: withCf ? _cfStop : 0,
+              cfGuid: withCf ? _cfGuid : 0,
+            ));
+        await _maybeVerifyCustomFields(newId);
       }
       await refresh();
     } on RedmineException catch (e) {
       if (e.kind == RedmineErrorKind.network) {
-        await _queue.enqueue(id != null
+        await _queue.enqueue(entryId != null
             ? {
                 'kind': 'update',
-                'id': id,
+                'id': entryId,
                 'hours': hours,
                 'togglStop': _isoZ(stop),
-                'cfStop': _cfStop,
+                'cfStop': _outCfStop,
               }
             : {
                 'kind': 'create',
@@ -1216,9 +1455,9 @@ class RedmineService {
                 'togglStart': _isoZ(r.start),
                 'togglStop': _isoZ(stop),
                 'togglGuid': r.guid,
-                'cfStart': _cfStart,
-                'cfStop': _cfStop,
-                'cfGuid': _cfGuid,
+                'cfStart': _outCfStart,
+                'cfStop': _outCfStop,
+                'cfGuid': _outCfGuid,
               });
         _emit(_onlineState, 1);
         _emit(_errors, const CoreError(
@@ -1309,18 +1548,19 @@ class RedmineService {
       _issues[issueId] = _Issue(issueId, issueSubject!);
     }
     try {
-      await api.updateTimeEntry(
-        id: e.id,
-        hours: hours,
-        comments: description,
-        activityId: activityId,
-        issueId: issueId,
-        spentOn: newStart,
-        togglStart: _isoZ(newStart),
-        togglStop: _isoZ(newEnd),
-        cfStart: _cfStart,
-        cfStop: _cfStop,
-      );
+      await _withCfRetry((withCf) => api.updateTimeEntry(
+            id: e.id,
+            hours: hours,
+            comments: description,
+            activityId: activityId,
+            issueId: issueId,
+            spentOn: newStart,
+            togglStart: _isoZ(newStart),
+            togglStop: _isoZ(newEnd),
+            cfStart: withCf ? _cfStart : 0,
+            cfStop: withCf ? _cfStop : 0,
+          ));
+      await _maybeVerifyCustomFields(e.id);
       await refresh();
       return true;
     } on RedmineException catch (ex) {
@@ -1335,14 +1575,65 @@ class RedmineService {
           'spentOn': newStart.millisecondsSinceEpoch,
           'togglStart': _isoZ(newStart),
           'togglStop': _isoZ(newEnd),
-          'cfStart': _cfStart,
-          'cfStop': _cfStop,
+          'cfStart': _outCfStart,
+          'cfStop': _outCfStop,
         });
         _emit(_onlineState, 1);
         _emit(_errors, const CoreError(
             message: 'Offline — your edit will sync when you reconnect.',
             userError: false));
         return true; // optimistically saved (queued)
+      }
+      _reportError(ex);
+      return false;
+    }
+  }
+
+  /// Simple-mode editor save: update the fields a no-timestamp entry can have —
+  /// duration (the standard `hours` field, which needs no custom fields),
+  /// comments, activity, issue, date — sending no toggl_* custom fields.
+  Future<bool> updateEntryFields({
+    required String guid,
+    String? description,
+    int? activityId,
+    int? issueId,
+    String? issueSubject,
+    DateTime? spentOn,
+    double? hours,
+  }) async {
+    final api = _api;
+    final e = _entriesByGuid[guid];
+    if (api == null || e == null) return false;
+    if (issueId != null && issueId != 0 && (issueSubject ?? '').isNotEmpty) {
+      _issues[issueId] = _Issue(issueId, issueSubject!);
+    }
+    try {
+      await api.updateTimeEntry(
+        id: e.id,
+        hours: hours,
+        comments: description,
+        activityId: activityId,
+        issueId: issueId,
+        spentOn: spentOn,
+      );
+      await refresh();
+      return true;
+    } on RedmineException catch (ex) {
+      if (ex.kind == RedmineErrorKind.network) {
+        await _queue.enqueue({
+          'kind': 'update',
+          'id': e.id,
+          'hours': ?hours,
+          'comments': description,
+          'activityId': activityId,
+          'issueId': issueId,
+          if (spentOn != null) 'spentOn': spentOn.millisecondsSinceEpoch,
+        });
+        _emit(_onlineState, 1);
+        _emit(_errors, const CoreError(
+            message: 'Offline — your edit will sync when you reconnect.',
+            userError: false));
+        return true;
       }
       _reportError(ex);
       return false;
@@ -1392,6 +1683,11 @@ class RedmineService {
       _defaultActivityId = da;
       _activityUserSet = true;
     }
+    _sendCustomFields = prefs.getBool(_kCfSend) ?? true;
+    _cfUserSet = prefs.getBool(_kCfUserSet) ?? false;
+    _cfStart = prefs.getInt(_kCfStart) ?? _cfStart;
+    _cfStop = prefs.getInt(_kCfStop) ?? _cfStop;
+    _cfGuid = prefs.getInt(_kCfGuid) ?? _cfGuid;
     final key = await _readKey();
     if (_baseUrl.isNotEmpty && key != null && key.isNotEmpty) {
       unawaited(_doLogin(key)); // a later _persist migrates it into the keychain
@@ -1427,6 +1723,8 @@ class RedmineService {
     _pomodoro.close();
     _idle.close();
     _syncEvents.close();
+    _cfConfig.close();
+    _cfAutoDisabled.close();
   }
 
   String _colorFor(int projectId) => projectColorHex(projectId);
@@ -1623,6 +1921,31 @@ class CoreError {
   const CoreError({required this.message, required this.userError});
   final String message;
   final bool userError;
+}
+
+/// The toggl_* custom-field configuration: whether the fields are sent with
+/// writes, and the three resolved/overridden ids. Drives Settings and the
+/// simple-mode UI gating (calendar + per-entry timestamps).
+class CustomFieldConfig {
+  const CustomFieldConfig({
+    required this.sendCustomFields,
+    required this.startId,
+    required this.stopId,
+    required this.guidId,
+  });
+  final bool sendCustomFields;
+  final int startId; // toggl_start
+  final int stopId; // toggl_stop
+  final int guidId; // toggl_guid (Redtick ID)
+}
+
+/// A one-shot "custom fields were auto-disabled" notice. Uses identity equality
+/// (no custom `==`) so repeated notices with the same text still register as
+/// distinct events — a `StreamProvider<String>` would dedupe equal AsyncValues
+/// and only fire the alert once per session.
+class CustomFieldNotice {
+  CustomFieldNotice(this.message);
+  final String message;
 }
 
 class Notice {

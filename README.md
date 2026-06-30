@@ -58,7 +58,7 @@ Redmine API contract, and platform-feature notes.
 
 Before you track anything, your Redmine instance needs **three time-entry custom fields**. Redtick stores a little extra data on every time entry through them, and without them you lose exact clock times and reliable editing/deletion. Create them once, in **Administration → Custom fields → New custom field → Time entries**:
 
-| Name (exact) | Format | Holds | Required? |
+| Suggested name | Format | Holds | Required? |
 | --- | --- | --- | --- |
 | `toggl_start` | Text | Exact start time, ISO 8601 (e.g. `2026-06-24T09:03:11+02:00`) | No |
 | `toggl_stop`  | Text | Exact stop time, ISO 8601 | No |
@@ -66,7 +66,7 @@ Before you track anything, your Redmine instance needs **three time-entry custom
 
 Setup notes:
 
-- **The names must match exactly** — `toggl_start`, `toggl_stop`, `toggl_guid`. Redtick resolves the fields *by name* at login (it never assumes hardcoded field ids), so a typo means the field won't be found.
+- **Names don't have to match — IDs do.** `toggl_start` / `toggl_stop` / `toggl_guid` are the names Redtick **auto-detects** by at login (it never assumes hardcoded ids). If you use **different names**, or your account can't list custom-field definitions (a non-admin where the fields aren't visible) so auto-detection can't find them, open **Settings → Redmine custom fields** in the app and enter the three field **IDs** by hand — those override name resolution. Redtick also confirms the fields actually save (it writes a tiny self-check entry on first use); if your instance doesn't have them or your role can't set them, it tells you and switches off sending custom fields.
 - **Format must be `Text`** (a plain string). The values are ISO 8601 timestamps and a GUID, both written and read as text.
 - **Leave "Required" unchecked.** Redtick fills these in automatically, but entries logged from the Redmine web UI won't have them — making them required would break manual logging.
 - **Tick the projects** the field applies to (or "for all projects"), and keep it **visible** so the API key can read it back.
@@ -79,7 +79,7 @@ A native Redmine time entry only records **`hours`** and **`spent_on`** (a calen
 - **Exact start/stop times.** Redmine has no concept of "started at 09:03, stopped at 10:47" — only "1.73 hours on 2026-06-24". `toggl_start` / `toggl_stop` preserve the precise timestamps so the day calendar can place and resize blocks correctly. When they're absent (e.g. an entry typed into the Redmine web UI), Redtick falls back to synthesizing a start time from `spent_on` + `hours`, so the block lands on the right day but at an approximate time.
 - **Stable identity for edits and deletes.** Redmine's own time-entry id changes meaning between machines and re-syncs; `toggl_guid` carries the app's own id so an edit (`PUT`) or delete (`DELETE`) reliably targets the *same* entry instead of creating duplicates.
 
-If you skip the fields entirely, tracking still works — new entries are created with the right hours and date — but exact times are approximated and idempotent editing is degraded. Creating the three fields is a one-time, five-minute step that makes the experience lossless.
+If you skip the fields entirely (or your account can't set them), tracking still works in a **"plain hours" mode**: Redtick detects that custom fields don't save, turns them off, and logs each entry's `hours`, `spent_on`, activity, and comment — hiding the per-entry start/stop times and the Calendar, which need the timestamps. You can flip this yourself in **Settings → Redmine custom fields**. Creating the three fields is a one-time, five-minute step that makes the experience lossless.
 
 ## Can I hide these fields in the Redmine web UI?
 
@@ -118,6 +118,24 @@ Prefer a manual download, or on Windows/Linux? Grab the installer for your platf
 1. Launch Redtick.
 2. On the login screen, enter the URL of your Redmine instance (e.g. `https://redmine.example.com`) and your personal **API key** (Redmine → *My account* → *API access key*).
 3. Start tracking — entries sync to that Redmine backend.
+
+## Custom fields & plain-hours mode
+
+Redtick stores each entry's exact start/stop times and a stable id in three
+time-entry [custom fields](#redmine-setup-required-custom-fields). It resolves
+their IDs automatically at login (by the names `toggl_start` / `toggl_stop` /
+`toggl_guid`), but you can also set them by hand in **Settings → Redmine custom
+fields** — the field names don't matter, only that the three **IDs** are correct.
+
+**If those fields aren't available** — they don't exist on the instance, or your
+account isn't allowed to set them — **Redtick automatically switches to
+plain-hours tracking.** When it detects (on the first write, or via a one-off
+self-check when you toggle the setting on) that the custom fields don't actually
+save, it turns sending them off and tells you. In that mode it still logs each
+entry's **hours**, date, activity, and comment, but the per-entry start/stop
+**timestamps** and the **Calendar** view are hidden (they have nowhere to be
+stored). Re-enable it any time in **Settings → Redmine custom fields** once the
+fields exist and their IDs are set.
 
 # Build
 

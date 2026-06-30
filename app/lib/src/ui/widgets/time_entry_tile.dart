@@ -13,18 +13,24 @@ class TimeEntryTile extends StatelessWidget {
     required this.entry,
     required this.onContinue,
     this.onTap,
+    this.showTimestamps = true,
   });
 
   final TimeEntry entry;
   final VoidCallback onContinue;
   final VoidCallback? onTap;
 
+  /// Whether to show the start–stop clock range. Hidden in simple mode (custom
+  /// fields off), where entries have no precise timestamps — only a duration.
+  final bool showTimestamps;
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final t = Theme.of(context).extension<RedtickTokens>()!;
     final hasSub = entrySubline(entry).isNotEmpty;
-    final range = (entry.startTimeString.isNotEmpty &&
+    final range = (showTimestamps &&
+            entry.startTimeString.isNotEmpty &&
             entry.endTimeString.isNotEmpty)
         ? '${entry.startTimeString} – ${entry.endTimeString}'
         : '';

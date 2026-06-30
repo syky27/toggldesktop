@@ -182,7 +182,8 @@ class _EntryListState extends ConsumerState<_EntryList> {
         .continueEntry(e.guid, stopOthers: !allowConcurrent);
   }
 
-  Widget _rowWidget(BuildContext context, EntryListRow row) {
+  Widget _rowWidget(
+      BuildContext context, EntryListRow row, bool showTimestamps) {
     switch (row) {
       case DayHeaderRow(:final entry):
         return _DayHeader(entry: entry);
@@ -197,6 +198,7 @@ class _EntryListState extends ConsumerState<_EntryList> {
           entry: entry,
           onContinue: () => _continue(entry),
           onTap: () => showEntryEditor(context, entry),
+          showTimestamps: showTimestamps,
         );
         return grouped
             ? Padding(padding: const EdgeInsets.only(left: 24), child: tile)
@@ -211,6 +213,9 @@ class _EntryListState extends ConsumerState<_EntryList> {
 
     final rows = buildEntryRows(widget.entries,
         groupByIssue: widget.groupByIssue, expanded: _expanded);
+    final showTimestamps = ref.watch(customFieldConfigProvider).asData?.value
+            .sendCustomFields ??
+        ref.read(coreServiceProvider).sendCustomFields;
 
     if (rows.isEmpty) {
       final empty = Center(
@@ -252,7 +257,7 @@ class _EntryListState extends ConsumerState<_EntryList> {
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _rowWidget(context, rows[i]),
+                    _rowWidget(context, rows[i], showTimestamps),
                     if (divider) Divider(height: 1, color: hairline),
                   ],
                 );
@@ -271,7 +276,7 @@ class _EntryListState extends ConsumerState<_EntryList> {
       separatorBuilder: (_, i) => dividerAfterRow(rows, i)
           ? Divider(height: 1, color: hairline)
           : const SizedBox.shrink(),
-      itemBuilder: (context, i) => _rowWidget(context, rows[i]),
+      itemBuilder: (context, i) => _rowWidget(context, rows[i], showTimestamps),
     );
     // Android: Material drop-down indicator. Desktop: plain list (sidebar button).
     if (Platform.isAndroid) {
