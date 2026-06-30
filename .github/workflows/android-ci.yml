@@ -22,6 +22,9 @@ env:
 jobs:
   smoke-test:
     runs-on: ubuntu-latest
+    # Backstop: a normal run is ~15-20 min. Without this a hung emulator (boot
+    # never completes) runs to GitHub's 6-hour default.
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: app
@@ -55,6 +58,9 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Launch emulator + smoke test
+        # Bound the hang-prone step: emulator boot ~3-5 min + smoke ~30s. If the
+        # emulator never boots, fail in ~12 min instead of hanging the job.
+        timeout-minutes: 12
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
