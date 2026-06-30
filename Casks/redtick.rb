@@ -1,6 +1,6 @@
 cask "redtick" do
-  version "1.7.4"
-  sha256 "84ab157131657fd3b673d3083cd8af22e44ee5a1ca58031036bfa68b8388783e"
+  version "1.7.5"
+  sha256 "279704c01ab266fafacfc3cc921319aa1d558cd8b6c17a87f115fb070351f1b8"
 
   url "https://github.com/syky27/redtick/releases/download/v#{version}/redtick-v#{version}.dmg"
   name "Redtick"
