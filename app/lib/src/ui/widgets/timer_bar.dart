@@ -8,6 +8,7 @@ import '../../state/providers.dart';
 import '../theme.dart';
 import 'entry_bits.dart';
 import 'issue_picker.dart';
+import 'running_start_editor.dart';
 
 /// Running-timer hero bar (design §3.3): live red mono duration, issue chip +
 /// activity, and a Stop button; an idle "Start" affordance otherwise. With
@@ -107,9 +108,20 @@ class _Running extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 16),
-        Text(entry.duration,
-            style: RedtickTheme.mono(
-                fontSize: 26, fontWeight: FontWeight.w700, color: cs.primary)),
+        MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: () => showRunningStartEditor(context, core, entry),
+            child: Tooltip(
+              message: 'Adjust start time',
+              child: Text(entry.duration,
+                  style: RedtickTheme.mono(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w700,
+                      color: cs.primary)),
+            ),
+          ),
+        ),
         const SizedBox(width: 16),
         FilledButton.icon(
           onPressed: () => core.stopEntry(entry.guid),

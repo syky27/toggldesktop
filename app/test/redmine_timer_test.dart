@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:redtick/src/data/redmine_service.dart';
+import 'package:redtick/src/models/time_entry.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 http.Client backend({
@@ -299,6 +300,110 @@ void main() {
         postCfs.firstWhere((c) => c['id'] == id)['value'] as String;
     expect(cf(12), isNotEmpty); // toggl_start = idle start
     expect(cf(14), isNotEmpty); // toggl_stop = now (a completed entry)
+  });
+
+  // Elapsed seconds of a running model, measured against the current wall clock.
+  int elapsedSec(TimeEntry t) =>
+      DateTime.now().millisecondsSinceEpoch ~/ 1000 - t.started;
+
+  // Start a fresh running timer by continuing a past (completed) entry; returns
+  // the new running model once its start POST has a Redmine id.
+  Future<(RedmineService, TimeEntry)> freshRunning(
+      List<Map<String, dynamic>> puts) async {
+    final done = entry(
+        id: 1400,
+        start: '2026-06-25T07:00:00Z',
+        stop: '2026-06-25T08:00:00Z',
+        guid: 'past',
+        comments: 'past');
+    final svc = await RedmineService.create(
+        httpClient: backend(timeEntries: [done], puts: puts));
+    final firstList =
+        svc.timeEntries.firstWhere((l) => l.any((e) => !e.isHeader));
+    svc.setBaseUrl('https://x');
+    svc.login('', 'key');
+    final list = await firstList.timeout(const Duration(seconds: 5));
+    final row = list.firstWhere((e) => !e.isHeader);
+    final running = svc.timerState.firstWhere((t) => t != null && t.isRunning);
+    svc.continueEntry(row.guid);
+    final t = await running.timeout(const Duration(seconds: 5));
+    await Future<void>.delayed(const Duration(milliseconds: 80)); // POST confirms
+    return (svc, t!);
+  }
+
+  test('adjustRunningStart PUTs toggl_start on the open row (no hours)',
+      () async {
+    final puts = <Map<String, dynamic>>[];
+    final (svc, t) = await freshRunning(puts);
+    addTearDown(svc.dispose);
+
+    // Backdate the running timer by two hours.
+    final shifted =
+        svc.timerState.firstWhere((x) => x != null && elapsedSec(x) > 3600);
+    final ok = await svc.adjustRunningStart(
+        t.guid, DateTime.now().subtract(const Duration(hours: 2)));
+    expect(ok, isTrue);
+    final adjusted = await shifted.timeout(const Duration(seconds: 5));
+    expect(adjusted!.isRunning, isTrue);
+    expect(elapsedSec(adjusted), greaterThan(3600)); // ~2h elapsed now
+
+    // Exactly one PUT: an open-row start move — toggl_start set, no hours, no stop.
+    expect(puts, hasLength(1));
+    final put = puts.single;
+    expect(put.containsKey('hours'), isFalse, reason: 'still running');
+    expect(put.containsKey('spent_on'), isTrue);
+    final cfs = (put['custom_fields'] as List).cast<Map>();
+    expect(cfs.any((c) => c['id'] == 12 && (c['value'] as String).isNotEmpty),
+        isTrue); // toggl_start moved
+    expect(cfs.any((c) => c['id'] == 14), isFalse); // toggl_stop untouched
+  });
+
+  test('adjustRunningStart clamps a future start to now', () async {
+    final puts = <Map<String, dynamic>>[];
+    final (svc, t) = await freshRunning(puts);
+    addTearDown(svc.dispose);
+
+    // First move it back 2h so the clamp is observable...
+    final back =
+        svc.timerState.firstWhere((x) => x != null && elapsedSec(x) > 3600);
+    await svc.adjustRunningStart(
+        t.guid, DateTime.now().subtract(const Duration(hours: 2)));
+    await back.timeout(const Duration(seconds: 5));
+
+    // ...then a future start clamps to now (elapsed ~0).
+    final clamped =
+        svc.timerState.firstWhere((x) => x != null && elapsedSec(x) < 120);
+    await svc.adjustRunningStart(
+        t.guid, DateTime.now().add(const Duration(hours: 1)));
+    final c = await clamped.timeout(const Duration(seconds: 5));
+    expect(c!.isRunning, isTrue);
+    expect(elapsedSec(c), inInclusiveRange(0, 120));
+  });
+
+  test('stop after adjust finalizes with the corrected start + hours', () async {
+    final puts = <Map<String, dynamic>>[];
+    final (svc, t) = await freshRunning(puts);
+    addTearDown(svc.dispose);
+
+    final back =
+        svc.timerState.firstWhere((x) => x != null && elapsedSec(x) > 3600);
+    await svc.adjustRunningStart(
+        t.guid, DateTime.now().subtract(const Duration(hours: 2)));
+    await back.timeout(const Duration(seconds: 5));
+
+    final stopped = svc.timerState.firstWhere((x) => x == null);
+    expect(svc.stopEntry(t.guid), isTrue);
+    await stopped.timeout(const Duration(seconds: 5));
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+
+    // The finalize PUT reflects the adjusted start: ~2h of hours + a stop time.
+    final stopPut = puts.last;
+    expect((stopPut['hours'] as num).toDouble(), greaterThan(1.9));
+    final cfs = (stopPut['custom_fields'] as List).cast<Map>();
+    expect(cfs.any((c) => c['id'] == 12 && (c['value'] as String).isNotEmpty),
+        isTrue); // toggl_start carried through
+    expect(cfs.any((c) => c['id'] == 14 && (c['value'] as String).isNotEmpty),
+        isTrue); // toggl_stop set
   });
 
   test('deleteEntry DELETEs by id', () async {

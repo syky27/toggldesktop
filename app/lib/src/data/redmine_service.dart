@@ -1096,6 +1096,63 @@ class RedmineService {
     return true;
   }
 
+  /// Adjust a running entry's start time (e.g. you began tracking a few minutes
+  /// late and want the elapsed to reflect when you actually started). Shifts the
+  /// local start so the elapsed reflects [newStart], updates the UI at once, and
+  /// pushes `toggl_start` to Redmine when the open row already exists on the
+  /// server. In simple mode (or while the start POST is still deferred) the new
+  /// start is carried into the create/finalize write at stop instead.
+  Future<bool> adjustRunningStart(String guid, DateTime newStart) async {
+    _RunningEntry? r;
+    for (final e in _running) {
+      if (e.guid == guid) {
+        r = e;
+        break;
+      }
+    }
+    if (r == null) return false;
+    // Can't start in the future — clamp so the elapsed never goes negative.
+    final now = DateTime.now();
+    if (newStart.isAfter(now)) newStart = now;
+    r.start = newStart;
+    _emitRunning(); // top-bar duration + start reflect it instantly
+
+    final api = _api;
+    // Simple mode: no server row while running — the adjusted start flows into
+    // the create-on-stop write via r.start. Nothing to PUT now.
+    if (api == null || !_sendCustomFields) return true;
+    // If the start POST is still in flight, wait for its id before updating.
+    int? id = r.redmineId;
+    if (id == null && r.createFuture != null) id = await r.createFuture;
+    // Start POST failed/deferred → no server row yet; stop will create it.
+    if (id == null) return true;
+    final entryId = id;
+    try {
+      // hours left null ⇒ stays 0 (still an open/running entry); only move start.
+      await _withCfRetry((withCf) => api.updateTimeEntry(
+            id: entryId,
+            spentOn: newStart,
+            togglStart: _isoZ(newStart),
+            cfStart: withCf ? _cfStart : 0,
+          ));
+      return true;
+    } on RedmineException catch (e) {
+      if (e.kind == RedmineErrorKind.network) {
+        await _queue.enqueue({
+          'kind': 'update',
+          'id': entryId,
+          'spentOn': newStart.millisecondsSinceEpoch,
+          'togglStart': _isoZ(newStart),
+          'cfStart': _outCfStart,
+        });
+        _emit(_onlineState, 1);
+        return true; // optimistically saved (queued)
+      }
+      _reportError(e);
+      return false;
+    }
+  }
+
   /// Stop every running entry except the most recently started one. Used when
   /// the user switches concurrent tracking off while several timers run.
   void collapseRunningToMostRecent() {
@@ -1411,7 +1468,12 @@ class RedmineService {
         await _withCfRetry((withCf) => api.updateTimeEntry(
               id: entryId,
               hours: hours,
+              // Re-send toggl_start so a start adjusted while offline / in simple
+              // mode (never PUT mid-run) still lands on the finalized row —
+              // keeps the server start == local start.
+              togglStart: _isoZ(re.start),
               togglStop: _isoZ(stop),
+              cfStart: withCf ? _cfStart : 0,
               cfStop: withCf ? _cfStop : 0,
             ));
       } else {
@@ -1441,7 +1503,9 @@ class RedmineService {
                 'kind': 'update',
                 'id': entryId,
                 'hours': hours,
+                'togglStart': _isoZ(r.start),
                 'togglStop': _isoZ(stop),
+                'cfStart': _outCfStart,
                 'cfStop': _outCfStop,
               }
             : {
@@ -1863,7 +1927,10 @@ class _RunningEntry {
   final int projectId;
   final int activityId;
   final String description;
-  final DateTime start;
+
+  /// Mutable so the user can backdate a running timer (started tracking late) —
+  /// see [RedmineService.adjustRunningStart].
+  DateTime start;
 
   /// The in-flight create POST (resolves to the new id, or null on failure) so
   /// a fast stop can await it instead of posting a duplicate entry.
