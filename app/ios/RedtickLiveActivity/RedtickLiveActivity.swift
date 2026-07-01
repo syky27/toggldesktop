@@ -59,6 +59,12 @@ private struct HourglassBadge: View {
 private struct LockScreenView: View {
   let context: Ctx
   var body: some View {
+    // Same shape as the Dynamic Island expanded view: badge leading, title /
+    // subtitle flexible in the middle, ticking clock pinned trailing. The clock
+    // is width-bounded (never `.fixedSize()`) — `Text(timerInterval:)` sizes to
+    // the *widest* value its range can reach, and the range runs to
+    // `.distantFuture`, so an unbounded clock reserves a monstrous width, steals
+    // the whole row, and overflows off-screen.
     HStack(spacing: 12) {
       HourglassBadge()
       VStack(alignment: .leading, spacing: 3) {
@@ -76,13 +82,11 @@ private struct LockScreenView: View {
         .fontWeight(.semibold)
         .foregroundStyle(.white)
         .lineLimit(1)
-        .layoutPriority(1) // never squeezed by a long title
-        .frame(minWidth: 96, alignment: .trailing)
-    
+        .frame(maxWidth: 116, alignment: .trailing)  // bounded, not fixedSize
+        .layoutPriority(1)                            // never squeezed by a long title
     }
     .padding(.vertical, 14)
-    .padding(.leading, 16)
-    .padding(.trailing, 8)
+    .padding(.horizontal, 16)
   }
 }
 
