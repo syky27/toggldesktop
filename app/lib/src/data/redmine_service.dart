@@ -16,6 +16,13 @@ import 'redmine_api_client.dart';
 const String kRedmineBaseUrlKey = 'redmine_base_url';
 const String kRedmineApiKeyKey = 'redmine_api_key';
 
+/// The "track multiple tasks at once" preference key. Owned here (the data
+/// layer) and referenced by `MultiTaskSettingsNotifier` so the deep-link handler
+/// can read the persisted value directly — the Riverpod notifier seeds `false`
+/// synchronously and loads the real value async, so trusting it at cold-launch
+/// deep-link time would race (a multi-task user could get the single-timer path).
+const String kAllowConcurrentTrackingKey = 'allow_concurrent_tracking';
+
 /// Pure-Dart Redmine backend — the native replacement for the FFI `CoreService`.
 ///
 /// It deliberately keeps the **same public method/stream surface** the UI and
@@ -159,6 +166,10 @@ class RedmineService {
   final _pendingCreates = <String, _Entry>{};
   final List<_RunningEntry> _running = [];
 
+  /// A `redtick://start` deep link that arrived before login finished (cold
+  /// launch from the browser). Replayed once login succeeds (see [_emitLogin]).
+  ({int issueId, String? host})? _pendingLink;
+
   // Reconcile guard: a confirmed running entry must be absent from the server's
   // open set for this many consecutive reconciles — and be at least [_dropGrace]
   // old — before it's dropped. Absorbs transient read-misses (replication lag,
@@ -199,6 +210,10 @@ class RedmineService {
   // signal carrying the alert message when a write rejection turns sending off.
   final _cfConfig = StreamController<CustomFieldConfig>.broadcast();
   final _cfAutoDisabled = StreamController<CustomFieldNotice>.broadcast();
+  // One-shot outcomes of a `redtick://start` browser deep link (started /
+  // confirm-concurrent / already-running / error). Wired in `app.dart` to a
+  // toast, a confirm dialog, and `AppWindow.foreground()`.
+  final _deepLinkNotices = StreamController<DeepLinkNotice>.broadcast();
 
   LoginEvent? _lastLogin;
   List<TimeEntry>? _lastTimeEntries;
@@ -218,6 +233,9 @@ class RedmineService {
   Stream<Notice> get reminders => _reminders.stream;
   Stream<Notice> get pomodoro => _pomodoro.stream;
   Stream<IdleNotice> get idle => _idle.stream;
+
+  /// One-shot outcomes of handling a `redtick://start` browser deep link.
+  Stream<DeepLinkNotice> get deepLinkNotices => _deepLinkNotices.stream;
 
   /// Emits the timestamp of each successful refresh (drives the desktop
   /// "Synced · Ns ago" indicator).
@@ -243,6 +261,10 @@ class RedmineService {
     }
     return p;
   }
+
+  /// Whether a timer for [issueId] is already running (deep-link no-op guard).
+  bool isIssueRunning(int issueId) =>
+      _running.any((r) => r.issueId == issueId);
 
   List<Activity> get availableActivities => _activities;
 
@@ -1084,6 +1106,92 @@ class RedmineService {
     ));
   }
 
+  /// Handle a `redtick://start?issue=N&host=H` browser deep link (design: the
+  /// Chrome/Firefox extension launches it from a Redmine issue page). Runs the
+  /// state machine and surfaces the result on [deepLinkNotices]; the UI reacts
+  /// (foreground + toast, or a confirm dialog for concurrent tracking).
+  ///
+  ///  1. [host] guard — refuse an issue from a Redmine other than the one we're
+  ///     logged into (the "one host" invariant).
+  ///  2. Not logged in yet (cold launch) — queue the link and replay it once
+  ///     login succeeds; surface a "log in first" notice meanwhile.
+  ///  3. Resolve the issue by number (needs its project + subject to start).
+  ///  4. Already tracking that issue — no-op notice.
+  ///  5. Multi-task OFF → stop the current timer and start this one; ON → emit
+  ///     `confirmConcurrent` and let the UI ask before stacking it. The setting
+  ///     is read straight from prefs (not passed in) so a cold-launch link can't
+  ///     race the async load of `multiTaskSettingsProvider`.
+  Future<void> handleStartDeepLink(int issueId, {String? host}) async {
+    if (host != null && host.isNotEmpty && !_hostMatches(host)) {
+      _emit(_deepLinkNotices,
+          DeepLinkNotice.error('That issue is on a different Redmine ($host).'));
+      return;
+    }
+    // `_userId == 0` covers both "no session" and "login still in flight": queue
+    // and let [_emitLogin] replay it when the session is ready.
+    if (_userId == 0) {
+      _pendingLink = (issueId: issueId, host: host);
+      _emit(_deepLinkNotices, DeepLinkNotice.error(
+          'Log in to Redtick first, then click "Start in Redtick" again.'));
+      return;
+    }
+    final results =
+        await searchIssues(query: '$issueId', scope: IssueScope.all);
+    IssueResult? issue;
+    for (final r in results) {
+      if (r.id == issueId) {
+        issue = r;
+        break;
+      }
+    }
+    if (issue == null) {
+      _emit(_deepLinkNotices, DeepLinkNotice.error(
+          "Couldn't find issue #$issueId on this Redmine."));
+      return;
+    }
+    if (isIssueRunning(issueId)) {
+      _emit(_deepLinkNotices, DeepLinkNotice.alreadyRunning(
+          issueId: issueId, subject: issue.subject));
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final allowConcurrent = prefs.getBool(kAllowConcurrentTrackingKey) ?? false;
+    if (!allowConcurrent) {
+      startEntryForIssue(
+        issueId: issue.id,
+        projectId: issue.projectId,
+        subject: issue.subject,
+        projectName: issue.projectName,
+        description: issue.subject,
+        stopOthers: true,
+      );
+      _emit(_deepLinkNotices, DeepLinkNotice.started(
+          issueId: issue.id, subject: issue.subject));
+    } else {
+      _emit(_deepLinkNotices, DeepLinkNotice.confirmConcurrent(
+        issueId: issue.id,
+        subject: issue.subject,
+        projectId: issue.projectId,
+        projectName: issue.projectName,
+      ));
+    }
+  }
+
+  /// Whether [linkHost] (the page's `location.host`) is the Redmine we're logged
+  /// into. Compares hostnames only — scheme, port and any path are stripped.
+  bool _hostMatches(String linkHost) {
+    String norm(String s) => s
+        .replaceFirst(RegExp(r'^https?://'), '')
+        .split('/')
+        .first
+        .split(':')
+        .first
+        .toLowerCase()
+        .trim();
+    final mine = norm(host);
+    return mine.isNotEmpty && mine == norm(linkHost);
+  }
+
   /// Stop the primary (most-recently-started) running entry.
   bool stop() {
     unawaited(_stopRunning());
@@ -1724,6 +1832,14 @@ class RedmineService {
     final ev = LoginEvent(loggedIn: loggedIn, userId: userId);
     _lastLogin = ev;
     _emit(_loginState, ev);
+    // Replay a browser deep link that arrived before login finished (cold
+    // launch from the extension). The concurrent-mode setting is read from prefs
+    // inside handleStartDeepLink, so nothing to capture here.
+    if (loggedIn && _pendingLink != null) {
+      final p = _pendingLink!;
+      _pendingLink = null;
+      unawaited(handleStartDeepLink(p.issueId, host: p.host));
+    }
   }
 
   void _reportError(RedmineException e) {
@@ -1789,6 +1905,7 @@ class RedmineService {
     _syncEvents.close();
     _cfConfig.close();
     _cfAutoDisabled.close();
+    _deepLinkNotices.close();
   }
 
   String _colorFor(int projectId) => projectColorHex(projectId);
@@ -2019,6 +2136,62 @@ class Notice {
   const Notice(this.title, this.body);
   final String title;
   final String body;
+}
+
+/// What handling a `redtick://start` browser deep link resolved to.
+enum DeepLinkOutcome {
+  /// Single-timer mode: the timer was (re)started on the issue. UI: foreground +
+  /// "Now tracking #N" toast.
+  started,
+
+  /// Multi-task mode: the issue was resolved but NOT started — the UI should
+  /// foreground and ask before stacking a second timer.
+  confirmConcurrent,
+
+  /// A timer for the issue is already running — nothing to do.
+  alreadyRunning,
+
+  /// The link couldn't be honoured (wrong host, not logged in, issue not found).
+  error,
+}
+
+/// The one-shot result of a `redtick://start` deep link. Like [CustomFieldNotice]
+/// it uses identity equality (no `==`) so two identical outcomes — e.g. clicking
+/// the same link twice — still fire distinct events instead of being deduped by
+/// the `StreamProvider`.
+class DeepLinkNotice {
+  DeepLinkNotice.started({required this.issueId, required this.subject})
+      : outcome = DeepLinkOutcome.started,
+        projectId = 0,
+        projectName = '',
+        message = '';
+  DeepLinkNotice.confirmConcurrent({
+    required this.issueId,
+    required this.subject,
+    required this.projectId,
+    required this.projectName,
+  })  : outcome = DeepLinkOutcome.confirmConcurrent,
+        message = '';
+  DeepLinkNotice.alreadyRunning({required this.issueId, required this.subject})
+      : outcome = DeepLinkOutcome.alreadyRunning,
+        projectId = 0,
+        projectName = '',
+        message = 'Already tracking #$issueId.';
+  DeepLinkNotice.error(this.message)
+      : outcome = DeepLinkOutcome.error,
+        issueId = 0,
+        subject = '',
+        projectId = 0,
+        projectName = '';
+
+  final DeepLinkOutcome outcome;
+  final int issueId;
+  final String subject;
+  final int projectId;
+  final String projectName;
+
+  /// Human-readable text for the `error`/`alreadyRunning` toast (empty else).
+  final String message;
 }
 
 class IdleNotice {

@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/redmine_service.dart' show kAllowConcurrentTrackingKey;
+
 /// Whether the user may track several tasks at once. Opt-in (default OFF): with
 /// it off the app keeps the single-timer behaviour (starting/continuing a task
 /// stops the current one). With it on, timers run concurrently and stack in the
@@ -16,7 +18,9 @@ class MultiTaskSettings {
 }
 
 class MultiTaskSettingsNotifier extends Notifier<MultiTaskSettings> {
-  static const _kAllow = 'allow_concurrent_tracking';
+  // Single source of truth lives in the data layer so the deep-link handler and
+  // this notifier read/write the same key.
+  static const _kAllow = kAllowConcurrentTrackingKey;
 
   @override
   MultiTaskSettings build() {

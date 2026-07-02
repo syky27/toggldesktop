@@ -294,6 +294,11 @@ jobs:
               unknown apps" for your browser/file manager, then open the APK. Not on
               Google Play yet, so you may see an "unverified developer" prompt. The
               Android APKs are attached by the separate `android-release` workflow.
+            - **Browser extension** — `redtick-browser-extension-*.zip` for Chrome,
+              Edge, and Brave; extract it, then load the extracted folder as an
+              unpacked extension. Firefox users should install the AMO-signed
+              `redtick-browser-extension-firefox-*.xpi` when present. The extension
+              artifacts are attached by the separate `browser-extension` workflow.
 
             The macOS build is signed + notarized. Windows, Linux, and Android APKs
             are not code-signed by a platform authority yet (the Android APKs are

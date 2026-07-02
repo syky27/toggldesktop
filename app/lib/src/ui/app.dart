@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/redmine_service.dart';
 import '../models/time_entry.dart';
+import '../platform/deep_link.dart';
 import '../platform/live_timer.dart';
 import '../platform/notifications.dart';
+import '../platform/window.dart';
 import '../state/multi_task_settings.dart';
 import '../state/providers.dart';
 import '../state/release_watch.dart';
@@ -77,6 +82,45 @@ class _AuthGate extends ConsumerWidget {
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
               child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
+  /// Multi-task mode: a browser deep link resolved an issue — ask before
+  /// stacking it as a second concurrent timer. On confirm, start it without
+  /// stopping the others (`stopOthers: false`).
+  void _confirmConcurrentStart(
+    BuildContext context,
+    WidgetRef ref,
+    DeepLinkNotice n,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Start another timer?'),
+        content: Text(
+            'Start tracking #${n.issueId} — ${n.subject} as another task? '
+            'Any timers already running keep going.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              ref.read(coreServiceProvider).startEntryForIssue(
+                    issueId: n.issueId,
+                    projectId: n.projectId,
+                    subject: n.subject,
+                    projectName: n.projectName,
+                    description: n.subject,
+                    stopOthers: false,
+                  );
+            },
+            child: const Text('Start'),
+          ),
         ],
       ),
     );
@@ -164,6 +208,36 @@ class _AuthGate extends ConsumerWidget {
     ref.listen(multiTaskSettingsProvider, (prev, next) {
       if ((prev?.allowConcurrent ?? false) && !next.allowConcurrent) {
         ref.read(coreServiceProvider).collapseRunningToMostRecent();
+      }
+    });
+
+    // Browser extension → app: a `redtick://start` link parsed into a service
+    // call. The service resolves the issue, applies the host/login guards, and
+    // reads the multi-task setting from prefs itself (so a cold-launch link
+    // can't race the async load of multiTaskSettingsProvider).
+    ref.listen(deepLinkUriProvider, (_, next) {
+      final uri = next.asData?.value;
+      if (uri == null) return;
+      final cmd = parseStartTimerLink(uri);
+      if (cmd == null) return; // not a start link — ignore
+      ref.read(coreServiceProvider).handleStartDeepLink(cmd.issueId, host: cmd.host);
+    });
+
+    // The result of a deep link: always raise the window, then toast (started /
+    // already-running / error) or — in multi-task mode — ask before stacking a
+    // second timer.
+    ref.listen(deepLinkNoticesProvider, (_, next) {
+      final n = next.asData?.value;
+      if (n == null) return;
+      unawaited(AppWindow.foreground());
+      switch (n.outcome) {
+        case DeepLinkOutcome.started:
+          _toast(context, 'Now tracking #${n.issueId} — ${n.subject}');
+        case DeepLinkOutcome.alreadyRunning:
+        case DeepLinkOutcome.error:
+          _toast(context, n.message);
+        case DeepLinkOutcome.confirmConcurrent:
+          _confirmConcurrentStart(context, ref, n);
       }
     });
 

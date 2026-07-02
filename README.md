@@ -16,6 +16,7 @@
   <a href="#how-it-works">How it works</a> •
   <a href="#redmine-setup-required-custom-fields">Custom fields</a> •
   <a href="#install">Install</a> •
+  <a href="#browser-extension">Browser extension</a> •
   <a href="#configure">Configure</a> •
   <a href="#build">Build</a> •
   <a href="#credits">Credits</a>
@@ -112,6 +113,54 @@ Prefer a manual download, or on Windows/Linux? Grab the installer for your platf
 [Releases page](https://github.com/syky27/redtick/releases/latest)
 (`redtick-*.dmg`, `redtick-*-setup.exe`, `redtick-*-x86_64.AppImage`).
 
+# Browser extension
+
+The optional browser extension adds a **Start in Redtick** button to Redmine
+issue pages. Clicking it opens a local `redtick://start?issue=<id>&host=<host>`
+link that the desktop app handles.
+
+## Install from a GitHub release
+
+1. Install and launch the Redtick desktop app first.
+2. Chrome, Edge, or Brave: download `redtick-browser-extension-*.zip` from the
+   [latest release](https://github.com/syky27/redtick/releases/latest).
+3. Extract the zip to a folder you will keep around; Chromium browsers load the
+   extracted folder, not the zip file itself.
+4. Open `chrome://extensions` or `edge://extensions`,
+   enable **Developer mode**, choose **Load unpacked**, and select the extracted
+   extension folder.
+5. Firefox: download `redtick-browser-extension-firefox-*.xpi` when present,
+   open it with Firefox, and accept the install prompt. If the XPI is not
+   attached to a release, AMO signing secrets were not configured for that run;
+   use the temporary source install in [`extension/README.md`](extension/README.md).
+6. Click the Redtick toolbar icon, open **Settings**, enter your Redmine URL
+   (for example `https://redmine.example.com`), then **Save & enable** and grant
+   site access.
+7. Reload a Redmine issue page (`.../issues/123`). The button appears in the
+   issue action bar.
+
+For local source installs and packaging commands, see
+[`extension/README.md`](extension/README.md).
+
+## How the extension gets published
+
+Firefox distribution is **AMO-signed but unlisted**. The extension is not
+searchable on addons.mozilla.org; users install the signed XPI from GitHub
+Releases.
+
+On every `v*` tag, GitHub Actions:
+
+1. packages the Chromium zip as `redtick-browser-extension-<tag>.zip`,
+2. sends the staged extension to AMO for unlisted signing using
+   `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET`,
+3. downloads the signed Firefox XPI as
+   `redtick-browser-extension-firefox-<tag>.xpi`,
+4. attaches both files to the draft GitHub Release.
+
+After the workflow finishes, publish the draft release. Firefox users install by
+downloading and opening the `.xpi`; Chromium users extract the `.zip` and load
+the folder as an unpacked extension.
+
 # Configure
 
 0. **One-time:** make sure the three [time-entry custom fields](#redmine-setup-required-custom-fields) exist on your Redmine instance.
@@ -169,6 +218,11 @@ Release builds are produced by GitHub Actions in
 - **`android-release.yml`** — signed AAB + split APKs; the APKs are attached to the
   same draft GitHub Release for **sideloading**. Google Play upload (fastlane
   `supply`) is wired but dormant until the Play service-account secret is set.
+- **`browser-extension.yml`** — validates and packages the Redmine browser
+  extension as `redtick-browser-extension-*.zip`; when `WEB_EXT_API_KEY` and
+  `WEB_EXT_API_SECRET` repo secrets are set from AMO, it also signs an unlisted
+  Firefox XPI as `redtick-browser-extension-firefox-*.xpi`. Both artifacts are
+  attached to tagged draft releases.
 
 All signing is **gated on repo secrets**, so forks and secret-less runs skip
 cleanly (macOS falls back to an unsigned `.dmg`; iOS/Android skip). Windows and

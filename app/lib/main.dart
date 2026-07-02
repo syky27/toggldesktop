@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -8,12 +9,18 @@ import 'package:workmanager/workmanager.dart';
 import 'src/data/http_log.dart';
 import 'src/data/redmine_service.dart';
 import 'src/platform/background_reconcile.dart';
+import 'src/platform/deep_link.dart';
 import 'src/state/logging_settings.dart';
 import 'src/state/providers.dart';
 import 'src/ui/app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Register the `redtick://` browser-extension deep-link handler. No-op except
+  // on Windows (macOS declares it in Info.plist, Linux in the packaged .desktop
+  // file); best-effort and fire-and-forget so it never delays startup.
+  unawaited(DeepLinks.registerScheme());
 
   // Background reconcile (iOS + Android): when the OS grants a background window,
   // end a stale live surface left by a timer stopped on another device while

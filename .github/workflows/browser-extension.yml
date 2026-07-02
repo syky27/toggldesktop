@@ -1,0 +1,209 @@
+# Package and AMO-sign the Redtick browser extension.
+# On every extension change, validate the standalone JS files and produce a zip
+# with manifest.json at the archive root. If AMO credentials are available,
+# also produce a signed Firefox XPI. On v* tags, attach those artifacts to the
+# same draft GitHub Release as the app installers.
+name: browser-extension
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+    paths:
+      - 'extension/**'
+      - '.github/workflows/browser-extension.yml'
+  pull_request:
+    paths:
+      - 'extension/**'
+      - '.github/workflows/browser-extension.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  WEB_EXT_VERSION: 10.4.0
+
+concurrency:
+  group: browser-extension-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Compute artifact suffix
+        id: suffix
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            SUFFIX="$GITHUB_REF_NAME"
+          else
+            SAFE_REF="${GITHUB_REF_NAME//\//-}"
+            SUFFIX="${SAFE_REF:-manual}-dev"
+          fi
+          echo "value=$SUFFIX" >> "$GITHUB_OUTPUT"
+
+      - name: Validate JavaScript
+        run: |
+          node --check extension/content.js
+          node --check extension/options.js
+          node --check extension/popup.js
+
+      - name: Validate manifest references
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const manifest = JSON.parse(fs.readFileSync('extension/manifest.json', 'utf8'));
+          const required = [
+            'manifest.json',
+            'content.js',
+            'options.html',
+            'options.js',
+            'popup.html',
+            'popup.js',
+            'icons/icon48.png',
+            'icons/icon128.png',
+          ];
+          for (const file of required) {
+            if (!fs.existsSync(`extension/${file}`)) {
+              throw new Error(`Missing extension file: ${file}`);
+            }
+          }
+          if (manifest.manifest_version !== 3) {
+            throw new Error('Expected manifest_version 3');
+          }
+          if (!manifest.version) {
+            throw new Error('manifest.json must define version');
+          }
+          NODE
+
+      - name: Stage extension files
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAGE="build/browser-extension"
+          rm -rf "$STAGE" dist
+          mkdir -p "$STAGE/icons" dist
+          cp extension/manifest.json "$STAGE/"
+          cp extension/content.js "$STAGE/"
+          cp extension/options.html "$STAGE/"
+          cp extension/options.js "$STAGE/"
+          cp extension/popup.html "$STAGE/"
+          cp extension/popup.js "$STAGE/"
+          cp extension/icons/icon48.png "$STAGE/icons/"
+          cp extension/icons/icon128.png "$STAGE/icons/"
+
+      - name: Stamp release version into staged manifest
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const manifestPath = 'build/browser-extension/manifest.json';
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          const tag = process.env.RELEASE_TAG || '';
+          const raw = tag.replace(/^v/, '');
+          const version = raw.replace(/\+/g, '.');
+          if (!/^\d+(\.\d+){0,3}$/.test(version)) {
+            throw new Error(
+              `Release tag ${tag} cannot be used as an extension version. ` +
+              'Use v1.2.3 or v1.2.3+4.'
+            );
+          }
+          manifest.version = version;
+          fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+          console.log(`Stamped extension version ${version}`);
+          NODE
+
+      - name: Lint staged extension
+        run: npx --yes web-ext@${{ env.WEB_EXT_VERSION }} lint --source-dir build/browser-extension
+
+      - name: Package extension zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="redtick-browser-extension-${{ steps.suffix.outputs.value }}.zip"
+          cd build/browser-extension
+          zip -r "$GITHUB_WORKSPACE/dist/$OUT" .
+          cd "$GITHUB_WORKSPACE"
+          unzip -Z1 "dist/$OUT" | grep -qx 'manifest.json'
+          unzip -l "dist/$OUT"
+
+      - name: Detect AMO signing capability
+        id: amo
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+        shell: bash
+        run: |
+          # AMO rejects re-uploading an existing version, and the manifest version
+          # is only stamped from the tag on tagged builds — so sign for v* tags only.
+          # Branch/PR builds stay zip-only (they'd otherwise re-submit 1.0.0 and 409).
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Non-tag build — packaging the Chromium zip only (AMO signing runs on v* tags)."
+          elif [[ -n "$WEB_EXT_API_KEY" && -n "$WEB_EXT_API_SECRET" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::AMO signing secrets absent — producing unsigned browser-extension zip only."
+          fi
+
+      - name: Sign Firefox XPI with AMO
+        if: steps.amo.outputs.enabled == 'true'
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SIGNED_DIR="dist/amo-signed"
+          mkdir -p "$SIGNED_DIR"
+          npx --yes web-ext@${{ env.WEB_EXT_VERSION }} sign \
+            --source-dir build/browser-extension \
+            --artifacts-dir "$SIGNED_DIR" \
+            --channel=unlisted
+          XPI="$(find "$SIGNED_DIR" -maxdepth 1 -name '*.xpi' -print -quit)"
+          if [[ -z "$XPI" ]]; then
+            echo "::error::AMO signing completed without producing an XPI."
+            exit 1
+          fi
+          cp "$XPI" "dist/redtick-browser-extension-firefox-${{ steps.suffix.outputs.value }}.xpi"
+          ls -l dist/redtick-browser-extension-firefox-*.xpi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: redtick-browser-extension
+          path: |
+            dist/redtick-browser-extension-*.zip
+            dist/redtick-browser-extension-firefox-*.xpi
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download extension artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: redtick-browser-extension
+          path: dist
+
+      - name: Attach extension artifacts to the draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/redtick-browser-extension-*
+          draft: true
+          fail_on_unmatched_files: true

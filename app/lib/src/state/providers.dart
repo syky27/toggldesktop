@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/http_log.dart';
 import '../data/redmine_service.dart';
 import '../models/time_entry.dart';
+import '../platform/deep_link.dart';
 import '../platform/notifications.dart';
 
 /// Holds the live [RedmineService] (the pure-Dart backend that replaced the FFI
@@ -108,6 +109,20 @@ final pomodoroProvider = StreamProvider<Notice>(
 /// Idle-detection notices (FP-52, desktop).
 final idleProvider = StreamProvider<IdleNotice>(
   (ref) => ref.watch(coreServiceProvider).idle,
+);
+
+/// Incoming `redtick://start` deep links from the browser extension: the
+/// cold-start launch link (replayed by app_links to the first subscriber) then
+/// warm links while running. Desktop-only (empty elsewhere). Parsed +
+/// dispatched to the service in `app.dart`.
+final deepLinkUriProvider = StreamProvider<Uri>(
+  (ref) => DeepLinks.uriStream(),
+);
+
+/// One-shot outcomes of handling a deep link (started / confirm-concurrent /
+/// already-running / error). Wired to a toast + confirm dialog in `app.dart`.
+final deepLinkNoticesProvider = StreamProvider<DeepLinkNotice>(
+  (ref) => ref.watch(coreServiceProvider).deepLinkNotices,
 );
 
 /// Convenience: whether the user is currently logged in.

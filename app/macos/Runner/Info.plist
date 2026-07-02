@@ -28,5 +28,19 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!-- redtick:// custom URL scheme for the browser extension "Start in Redtick"
+	     button. macOS routes the link to the running instance (or cold-launches
+	     it) and app_links delivers it to Dart; the app verifies the host. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>cz.syky.redtick</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>redtick</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

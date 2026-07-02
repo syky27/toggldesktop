@@ -3,8 +3,11 @@ Type=Application
 Name=Redtick
 GenericName=Time Tracker
 Comment=Track your Redmine time
-Exec=redtick
+Exec=redtick %u
 Icon=redtick
 Terminal=false
 Categories=Office;Utility;ProjectManagement;
 StartupWMClass=redtick
+# redtick:// deep links from the browser extension "Start in Redtick" button.
+# %u above passes the launched URL through to the app (app_links reads it).
+MimeType=x-scheme-handler/redtick;
