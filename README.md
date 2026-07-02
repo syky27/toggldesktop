@@ -119,7 +119,18 @@ The optional browser extension adds a **Start in Redtick** button to Redmine
 issue pages. Clicking it opens a local `redtick://start?issue=<id>&host=<host>`
 link that the desktop app handles.
 
-## Install from a GitHub release
+## From the browser stores
+
+- **Chrome / Edge / Brave** —
+  [Redtick on the Chrome Web Store](https://chromewebstore.google.com/detail/lbmdempbcmkhliblbdbaalojlffcpdka)
+  (Edge and Brave install Chrome Web Store items too).
+- **Firefox** — coming to [Firefox Add-ons](https://addons.mozilla.org/firefox/)
+  (listing in progress). Until it's live, use the manual install below.
+
+You also need the **Redtick desktop app** installed and running — it handles the
+`redtick://` link the button opens.
+
+## Install from a GitHub release (manual)
 
 1. Install and launch the Redtick desktop app first.
 2. Chrome, Edge, or Brave: download `redtick-browser-extension-*.zip` from the
