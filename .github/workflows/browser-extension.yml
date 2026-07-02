@@ -144,7 +144,13 @@ jobs:
           WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
         shell: bash
         run: |
-          if [[ -n "$WEB_EXT_API_KEY" && -n "$WEB_EXT_API_SECRET" ]]; then
+          # AMO rejects re-uploading an existing version, and the manifest version
+          # is only stamped from the tag on tagged builds — so sign for v* tags only.
+          # Branch/PR builds stay zip-only (they'd otherwise re-submit 1.0.0 and 409).
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Non-tag build — packaging the Chromium zip only (AMO signing runs on v* tags)."
+          elif [[ -n "$WEB_EXT_API_KEY" && -n "$WEB_EXT_API_SECRET" ]]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
