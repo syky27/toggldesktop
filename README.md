@@ -129,10 +129,9 @@ link that the desktop app handles.
 4. Open `chrome://extensions` or `edge://extensions`,
    enable **Developer mode**, choose **Load unpacked**, and select the extracted
    extension folder.
-5. Firefox: download `redtick-browser-extension-firefox-*.xpi` when present,
-   open it with Firefox, and accept the install prompt. If the XPI is not
-   attached to a release, AMO signing secrets were not configured for that run;
-   use the temporary source install in [`extension/README.md`](extension/README.md).
+5. Firefox: install from **Firefox Add-ons** (addons.mozilla.org) once the public
+   listing is live. For a source/dev install before then, use the temporary
+   add-on steps in [`extension/README.md`](extension/README.md).
 6. Click the Redtick toolbar icon, open **Settings**, enter your Redmine URL
    (for example `https://redmine.example.com`), then **Save & enable** and grant
    site access.
@@ -144,22 +143,19 @@ For local source installs and packaging commands, see
 
 ## How the extension gets published
 
-Firefox distribution is **AMO-signed but unlisted**. The extension is not
-searchable on addons.mozilla.org; users install the signed XPI from GitHub
-Releases.
-
 On every `v*` tag, GitHub Actions:
 
-1. packages the Chromium zip as `redtick-browser-extension-<tag>.zip`,
-2. sends the staged extension to AMO for unlisted signing using
-   `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET`,
-3. downloads the signed Firefox XPI as
-   `redtick-browser-extension-firefox-<tag>.xpi`,
-4. attaches both files to the draft GitHub Release.
+- **Chrome / Edge / Brave** — packages `redtick-browser-extension-<tag>.zip` and
+  attaches it to the GitHub Release. Extract it and load it unpacked, or upload it
+  to the Chrome Web Store (see [`docs/store/`](docs/store)).
+- **Firefox** — submits the tag-stamped version to the add-on's **listed (public)**
+  channel on [addons.mozilla.org](https://addons.mozilla.org) using
+  `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET`, so Firefox users install from AMO.
 
-After the workflow finishes, publish the draft release. Firefox users install by
-downloading and opening the `.xpi`; Chromium users extract the `.zip` and load
-the folder as an unpacked extension.
+The public AMO listing's metadata and screenshots are set up **once** in the AMO
+Developer Hub (see
+[`docs/store/submission-checklist.md`](docs/store/submission-checklist.md)); after
+that, each tagged release submits the new version automatically.
 
 # Configure
 
@@ -219,10 +215,10 @@ Release builds are produced by GitHub Actions in
   same draft GitHub Release for **sideloading**. Google Play upload (fastlane
   `supply`) is wired but dormant until the Play service-account secret is set.
 - **`browser-extension.yml`** — validates and packages the Redmine browser
-  extension as `redtick-browser-extension-*.zip`; when `WEB_EXT_API_KEY` and
-  `WEB_EXT_API_SECRET` repo secrets are set from AMO, it also signs an unlisted
-  Firefox XPI as `redtick-browser-extension-firefox-*.xpi`. Both artifacts are
-  attached to tagged draft releases.
+  extension as `redtick-browser-extension-*.zip` (attached to tagged releases for
+  Chrome/Edge/Brave); on `v*` tags, when `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET`
+  repo secrets are set from AMO, it also submits the tag-stamped version to the
+  add-on's listed (public) Firefox AMO channel.
 
 All signing is **gated on repo secrets**, so forks and secret-less runs skip
 cleanly (macOS falls back to an unsigned `.dmg`; iOS/Android skip). Windows and

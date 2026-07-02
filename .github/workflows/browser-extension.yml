@@ -1,8 +1,9 @@
-# Package and AMO-sign the Redtick browser extension.
+# Package the Redtick browser extension and publish Firefox to AMO.
 # On every extension change, validate the standalone JS files and produce a zip
-# with manifest.json at the archive root. If AMO credentials are available,
-# also produce a signed Firefox XPI. On v* tags, attach those artifacts to the
-# same draft GitHub Release as the app installers.
+# with manifest.json at the archive root, attached to the GitHub Release on v*
+# tags (the Chromium/Edge/Brave package). On v* tags, if AMO credentials are
+# available, the tag-stamped version is also submitted to the add-on's LISTED
+# (public) addons.mozilla.org channel — Firefox users install from AMO.
 name: browser-extension
 
 on:
@@ -157,34 +158,31 @@ jobs:
             echo "::notice::AMO signing secrets absent — producing unsigned browser-extension zip only."
           fi
 
-      - name: Sign Firefox XPI with AMO
+      - name: Submit Firefox version to AMO (listed / public)
         if: steps.amo.outputs.enabled == 'true'
+        # Non-fatal: a listed-submission hiccup (AMO review queue, transient API error)
+        # must never drop the Chromium zip from the release. Listed add-ons are
+        # distributed by AMO, so no self-hosted XPI is produced or attached.
+        continue-on-error: true
         env:
           WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
           WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
         shell: bash
         run: |
           set -euo pipefail
-          SIGNED_DIR="dist/amo-signed"
-          mkdir -p "$SIGNED_DIR"
+          # Submit the tag-stamped version to the add-on's LISTED (public) AMO channel.
+          # --approval-timeout 0 uploads and returns without blocking on AMO review.
+          # The public listing's metadata + screenshots are set up once in the AMO
+          # Developer Hub; each tagged release then submits the new version here.
           npx --yes web-ext@${{ env.WEB_EXT_VERSION }} sign \
             --source-dir build/browser-extension \
-            --artifacts-dir "$SIGNED_DIR" \
-            --channel=unlisted
-          XPI="$(find "$SIGNED_DIR" -maxdepth 1 -name '*.xpi' -print -quit)"
-          if [[ -z "$XPI" ]]; then
-            echo "::error::AMO signing completed without producing an XPI."
-            exit 1
-          fi
-          cp "$XPI" "dist/redtick-browser-extension-firefox-${{ steps.suffix.outputs.value }}.xpi"
-          ls -l dist/redtick-browser-extension-firefox-*.xpi
+            --channel=listed \
+            --approval-timeout 0
 
       - uses: actions/upload-artifact@v4
         with:
           name: redtick-browser-extension
-          path: |
-            dist/redtick-browser-extension-*.zip
-            dist/redtick-browser-extension-firefox-*.xpi
+          path: dist/redtick-browser-extension-*.zip
           if-no-files-found: error
           retention-days: 14
 

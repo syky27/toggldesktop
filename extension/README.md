@@ -25,10 +25,9 @@ The app only acts on links whose `host` matches the Redmine it's logged into.
 ## Install from a GitHub release
 
 1. Install and launch the Redtick desktop app first.
-2. Download the browser artifact from the Redtick
-   [Releases page](https://github.com/syky27/redtick/releases/latest):
-   - Chrome, Edge, or Brave: `redtick-browser-extension-*.zip`
-   - Firefox: `redtick-browser-extension-firefox-*.xpi` when present
+2. Chrome, Edge, or Brave: download `redtick-browser-extension-*.zip` from the
+   Redtick [Releases page](https://github.com/syky27/redtick/releases/latest).
+   Firefox users install from AMO (see below), not from the release.
 3. For Chromium browsers, extract the zip to a folder that will stay in place.
    Chromium keeps loading the extension from that folder.
 
@@ -41,15 +40,10 @@ The app only acts on links whose `host` matches the Redmine it's logged into.
    requested site access.
 
 ### Firefox
-1. Download `redtick-browser-extension-firefox-*.xpi`.
-2. Open the XPI with Firefox, or drag it into a Firefox window.
-3. Accept Firefox's install prompt.
-4. Open the extension's **Settings** (toolbar icon -> Settings), enter your
+1. Install from **Firefox Add-ons** (addons.mozilla.org) once the public listing
+   is live. Until then, use the temporary source install below.
+2. Open the extension's **Settings** (toolbar icon -> Settings), enter your
    Redmine URL -> **Save & enable**, and grant access.
-
-If a release only has the zip and no XPI, AMO signing was not configured for
-that run. Use the temporary source install below, or set the AMO secrets and
-rerun the release workflow.
 
 Then open any issue on that Redmine (`.../issues/123`) and reload — the
 **▶ Start in Redtick** button appears in the issue's action bar.
@@ -98,19 +92,15 @@ The `browser-extension` GitHub Actions workflow then:
 
 1. stages the files from `extension/`,
 2. stamps the staged `manifest.json` version from the tag,
-3. builds `redtick-browser-extension-v1.2.3.zip` for Chromium browsers,
-4. signs the staged extension with AMO as an **unlisted** Firefox extension,
-5. downloads `redtick-browser-extension-firefox-v1.2.3.xpi`,
-6. attaches both artifacts to the draft GitHub Release.
+3. builds `redtick-browser-extension-v1.2.3.zip` for Chromium browsers and
+   attaches it to the GitHub Release,
+4. submits the staged extension to the add-on's **listed (public)** Firefox AMO
+   channel so Firefox users install from addons.mozilla.org.
 
-Publish the draft GitHub Release when the workflows finish. Firefox users
-install from the `.xpi` attached there. The extension is not public/searchable
-on addons.mozilla.org unless a separate listed AMO submission is done.
+## AMO publishing (listed)
 
-## AMO signing
-
-GitHub Actions signs a Firefox XPI with AMO when these repository secrets are
-set:
+On `v*` tags, GitHub Actions submits the tag-stamped version to the add-on's
+**listed (public)** AMO channel when these repository secrets are set:
 
 - `WEB_EXT_API_KEY` — the AMO JWT issuer.
 - `WEB_EXT_API_SECRET` — the AMO JWT secret.
@@ -120,17 +110,19 @@ The workflow runs:
 ```bash
 npx web-ext sign \
   --source-dir build/browser-extension \
-  --artifacts-dir dist/amo-signed \
-  --channel=unlisted
+  --channel=listed \
+  --approval-timeout 0
 ```
 
-Successful signing produces `redtick-browser-extension-firefox-*.xpi`, which is
-attached to tagged draft releases next to the Chromium zip.
+The public listing's metadata (name, description, screenshots, categories) is set
+up **once** in the [AMO Developer Hub](https://addons.mozilla.org/developers/); see
+[`docs/store/submission-checklist.md`](../docs/store/submission-checklist.md). After
+that, each tagged release submits a new version — AMO reviews it, then it goes live.
 
-On tagged releases, the workflow stamps the staged `manifest.json` version from
-the tag before packaging and signing. Use tags like `v1.2.3` or `v1.2.3+4`; the
-latter becomes browser extension version `1.2.3.4`. This keeps AMO from
-rejecting repeat uploads with the same extension version.
+The workflow stamps the staged `manifest.json` version from the tag before
+packaging and submitting. Use tags like `v1.2.3` or `v1.2.3+4` (the latter becomes
+extension version `1.2.3.4`); AMO rejects re-uploads of a version that already
+exists, so every release must bump the version.
 
 ## How it works
 
@@ -146,5 +138,6 @@ rejecting repeat uploads with the same extension version.
   **Start in Redtick**, it passes the Redmine host and issue id to the local
   Redtick desktop app via a `redtick://` link. For AMO's built-in data consent,
   that is declared as required `browsingActivity`.
-- Publishing to the Chrome Web Store, Edge Add-ons, or AMO is separate from this
-  manual package and requires each store's review/signing flow.
+- Firefox AMO publishing is automated on `v*` tags (see above). Publishing to the
+  Chrome Web Store or Edge Add-ons is still a manual per-store submission — see
+  [`docs/store/`](../docs/store).
